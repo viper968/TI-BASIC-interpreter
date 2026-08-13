@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { run } from './helpers'
+import { colToX, xToCol, yToRow } from '../graph'
 
 describe('vm: arithmetic and Disp', () => {
   it('runs a Disp of a literal', () => {
@@ -635,5 +636,111 @@ describe('vm: 1-Var Stats / 2-Var Stats / LinReg', () => {
     expect(r.error).toBeNull()
     expect(r.state.vars.MeanX).toBe(42)
     expect(r.screenText.split('\n')[0]).toBe('42')
+  })
+})
+
+describe('vm: graphing', () => {
+  it('defaults the graph window to the standard TI-84 settings', () => {
+    const r = run('1->A')
+    expect(r.state.vars.Xmin).toBe(-10)
+    expect(r.state.vars.Xmax).toBe(10)
+    expect(r.state.vars.Xscl).toBe(1)
+    expect(r.state.vars.Ymin).toBe(-10)
+    expect(r.state.vars.Ymax).toBe(10)
+    expect(r.state.vars.Yscl).toBe(1)
+    expect(r.state.vars.Xres).toBe(1)
+  })
+
+  it('defines and evaluates a Y-variable', () => {
+    const r = run('"X²"->Y1\nDisp Y1(3)')
+    expect(r.error).toBeNull()
+    expect(r.state.yVars.Y1).toBe('X²')
+    expect(r.screenText.split('\n')[0]).toBe('9')
+  })
+
+  it('permanently sets X when a Y-variable is evaluated, matching real hardware', () => {
+    const r = run('"2X"->Y1\nY1(5)\nDisp X')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('5')
+  })
+
+  it('raises ERR:UNDEFINED for an undefined Y-variable', () => {
+    const r = run('Disp Y2(1)')
+    expect(r.error?.code).toBe('ERR:UNDEFINED')
+  })
+
+  it('DelVar clears a Y-variable definition', () => {
+    const r = run('"X"->Y1\nDelVar Y1')
+    expect(r.error).toBeNull()
+    expect(r.state.yVars.Y1).toBe('')
+  })
+
+  it('DispGraph plots a defined Y-variable onto the pixel buffer', () => {
+    const r = run('"X"->Y1\nDispGraph')
+    expect(r.error).toBeNull()
+    const w = { xMin: -10, xMax: 10, yMin: -10, yMax: 10 }
+    // DispGraph evaluates Y1 at each pixel column's x-value; since Y1 = X,
+    // the plotted point for column 71 is (colToX(71), colToX(71)).
+    const col = 71
+    const row = yToRow(colToX(col, w), w)
+    expect(r.state.graphScreen.pixels[row][col]).toBe(true)
+  })
+
+  it('DispGraph draws the X and Y axes when the origin is in view', () => {
+    const r = run('DispGraph')
+    expect(r.error).toBeNull()
+    const w = { xMin: -10, xMax: 10, yMin: -10, yMax: 10 }
+    const originRow = yToRow(0, w)
+    const originCol = xToCol(0, w)
+    // The whole horizontal axis row and vertical axis column should be lit.
+    expect(r.state.graphScreen.pixels[originRow][0]).toBe(true)
+    expect(r.state.graphScreen.pixels[originRow][94]).toBe(true)
+    expect(r.state.graphScreen.pixels[0][originCol]).toBe(true)
+    expect(r.state.graphScreen.pixels[62][originCol]).toBe(true)
+  })
+
+  it('ClrDraw clears the graph screen', () => {
+    const r = run('"X"->Y1\nDispGraph\nClrDraw')
+    expect(r.error).toBeNull()
+    expect(r.state.graphScreen.pixels.some((row) => row.some((p) => p))).toBe(false)
+  })
+
+  it('Line( draws a line between two graph-coordinate points', () => {
+    const r = run('Line(-10,0,10,0)')
+    expect(r.error).toBeNull()
+    const w = { xMin: -10, xMax: 10, yMin: -10, yMax: 10 }
+    const row = yToRow(0, w)
+    expect(r.state.graphScreen.pixels[row][0]).toBe(true)
+    expect(r.state.graphScreen.pixels[row][94]).toBe(true)
+  })
+
+  it('Line( with a trailing 0 erases instead of draws', () => {
+    const r = run('Line(-10,0,10,0)\nLine(-10,0,10,0,0)')
+    expect(r.error).toBeNull()
+    expect(r.state.graphScreen.pixels.some((row) => row.some((p) => p))).toBe(false)
+  })
+
+  it('Circle( draws a circle outline centered at the given point', () => {
+    const r = run('Circle(0,0,5)')
+    expect(r.error).toBeNull()
+    const w = { xMin: -10, xMax: 10, yMin: -10, yMax: 10 }
+    // The rightmost point of the circle (5,0) should be lit.
+    const row = yToRow(0, w)
+    const col = xToCol(5, w)
+    expect(r.state.graphScreen.pixels[row][col]).toBe(true)
+  })
+
+  it('Pxl-On(/Pxl-Off(/Pxl-Change( and pxl-Test( address the pixel buffer directly', () => {
+    const r = run('Pxl-On(10,20)\nDisp pxl-Test(10,20)\nPxl-Off(10,20)\nDisp pxl-Test(10,20)\nPxl-Change(5,5)\nDisp pxl-Test(5,5)')
+    expect(r.error).toBeNull()
+    const lines = r.screenText.split('\n')
+    expect(lines[0]).toBe('1')
+    expect(lines[1]).toBe('0')
+    expect(lines[2]).toBe('1')
+  })
+
+  it('rejects an out-of-range Pxl-On( pixel', () => {
+    const r = run('Pxl-On(100,20)')
+    expect(r.error?.code).toBe('ERR:DOMAIN')
   })
 })

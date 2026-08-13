@@ -1,6 +1,6 @@
 import type { Diagnostic } from './errors'
 import type { Token, TokenType } from './tokens'
-import { COMMANDS, STAT_VAR_NAMES } from './commands'
+import { COMMANDS, RESERVED_VAR_NAMES } from './commands'
 
 interface KeywordEntry {
   match: string
@@ -22,6 +22,7 @@ const EXCLUDED_FROM_KEYWORD_TABLE = new Set([
   '*row+(', // ditto
   '1-Var Stats', // starts with a digit, matched explicitly before number lexing
   '2-Var Stats', // ditto
+  'Y1', // doc-only entry representing the whole Y0-Y9 family; matched explicitly below
 ])
 
 function buildKeywordTable(): KeywordEntry[] {
@@ -33,10 +34,11 @@ function buildKeywordTable(): KeywordEntry[] {
     { match: 'e', type: 'EULER', text: 'e' },
   ]
   for (const cmd of COMMANDS) {
-    // Statistics/regression results (n, a, b, r, MeanX, Σx, ...) behave like
-    // ordinary variables — readable, writable, implicit-multiplication-
-    // eligible — so they get the VAR token type instead of KEYWORD.
-    const type: TokenType = STAT_VAR_NAMES.has(cmd.name) ? 'VAR' : 'KEYWORD'
+    // Statistics/regression results and graph window variables (n, a, b, r,
+    // MeanX, Σx, Xmin, ...) behave like ordinary variables — readable,
+    // writable, implicit-multiplication-eligible — so they get the VAR
+    // token type instead of KEYWORD.
+    const type: TokenType = RESERVED_VAR_NAMES.has(cmd.name) ? 'VAR' : 'KEYWORD'
     if (!EXCLUDED_FROM_KEYWORD_TABLE.has(cmd.name)) {
       entries.push({ match: cmd.name, type, text: cmd.name })
     }
@@ -348,6 +350,12 @@ export function tokenize(source: string): LexResult {
       if (ch === 'L' && source[pos + 1] >= '1' && source[pos + 1] <= '6') {
         const text = source.slice(pos, pos + 2)
         push('LIST', text, startLine, startCol)
+        advance(2)
+        continue
+      }
+      if (ch === 'Y' && source[pos + 1] >= '0' && source[pos + 1] <= '9') {
+        const text = source.slice(pos, pos + 2)
+        push('YVAR', text, startLine, startCol)
         advance(2)
         continue
       }

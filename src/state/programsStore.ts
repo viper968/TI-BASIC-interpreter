@@ -101,6 +101,28 @@ const SAMPLE_PROGRAMS: Omit<StoredProgram, 'id' | 'updatedAt'>[] = [
       'Disp round(r,3)',
     ].join('\n'),
   },
+  {
+    name: 'GRAPH',
+    source: [
+      'ClrHome',
+      'Disp "GRAPHING DEMO"',
+      'Disp "SEE THE GRAPH TAB"',
+      '-10->Xmin',
+      '10->Xmax',
+      '1->Xscl',
+      '-10->Ymin',
+      '10->Ymax',
+      '1->Yscl',
+      '"X²/4-4"->Y1',
+      '"2X"->Y2',
+      'DispGraph',
+      'Pause',
+      'ClrDraw',
+      'Circle(0,0,6)',
+      'Line(-10,-10,10,10)',
+      'Line(-10,10,10,-10)',
+    ].join('\n'),
+  },
 ]
 
 function loadPrograms(): StoredProgram[] {

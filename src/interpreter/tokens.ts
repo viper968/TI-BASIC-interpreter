@@ -6,6 +6,7 @@ export type TokenType =
   | 'LIST' // L1-L6
   | 'MATRIX' // [A]-[J], as one token e.g. "[A]"
   | 'STRVAR' // Str0-Str9
+  | 'YVAR' // Y0-Y9
   | 'ANS'
   | 'PI'
   | 'EULER'

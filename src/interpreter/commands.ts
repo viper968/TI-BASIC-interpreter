@@ -10,8 +10,8 @@
  *
  * Scope: TI-84 Plus / TI-84 Plus Silver Edition TI-BASIC (MathPrint off,
  * classic OS, monochrome). Notably NOT included (see README "Roadmap"):
- * complex numbers, stat plots, graphing commands, apps, user-created list
- * names, and CATALOG-only rarely used commands.
+ * complex numbers, stat plots, a trace cursor, Shade(, apps, user-created
+ * list names, and CATALOG-only rarely used commands.
  */
 
 export type CommandCategory =
@@ -21,6 +21,7 @@ export type CommandCategory =
   | 'list'
   | 'matrix'
   | 'stats'
+  | 'graph'
   | 'string'
   | 'math'
   | 'logic'
@@ -100,7 +101,7 @@ export const COMMANDS: CommandSpec[] = [
   { name: 'variance(', category: 'stats', kind: 'function', syntax: 'variance(list[,freqlist])', description: 'Sample variance (divides by n-1).' },
   { name: '1-Var Stats', category: 'stats', kind: 'statement', syntax: '1-Var Stats [Xlist[,Freqlist]]', description: 'Computes one-variable summary statistics for Xlist (default L1) and stores them into n, MeanX, Σx, Σx², Sx, σx, MinX, Q1, Med, Q3, MaxX.' },
   { name: '2-Var Stats', category: 'stats', kind: 'statement', syntax: '2-Var Stats [Xlist,Ylist[,Freqlist]]', description: 'Computes two-variable summary statistics for Xlist,Ylist (default L1,L2) and stores them into the 1-Var results plus MeanY, Σy, Σy², Σxy, Sy, σy, MinY, MaxY.' },
-  { name: 'LinReg(ax+b)', category: 'stats', kind: 'statement', syntax: 'LinReg(ax+b) [Xlist,Ylist[,Freqlist]]', description: 'Fits a least-squares line y=ax+b to Xlist,Ylist (default L1,L2) and stores the result into a, b, r. (Storing the equation into a Y-variable is not supported yet — no graphing.)' },
+  { name: 'LinReg(ax+b)', category: 'stats', kind: 'statement', syntax: 'LinReg(ax+b) [Xlist,Ylist[,Freqlist]]', description: 'Fits a least-squares line y=ax+b to Xlist,Ylist (default L1,L2) and stores the result into a, b, r. (The optional RegEQ argument to also store the equation into a Y-variable is not supported yet.)' },
   { name: 'normalcdf(', category: 'stats', kind: 'function', syntax: 'normalcdf(lower,upper[,μ,σ])', description: 'Area under the normal curve between lower and upper (default μ=0,σ=1).' },
   { name: 'invNorm(', category: 'stats', kind: 'function', syntax: 'invNorm(area[,μ,σ])', description: 'The x-value where the normal CDF equals area (default μ=0,σ=1).' },
   { name: 'n', category: 'stats', kind: 'constant', syntax: 'n', description: 'Number of data points from the last 1-Var Stats / 2-Var Stats.' },
@@ -125,6 +126,24 @@ export const COMMANDS: CommandSpec[] = [
   { name: 'σy', aliases: ['sigmay'], category: 'stats', kind: 'constant', syntax: 'σy', description: 'Population standard deviation of y from the last 2-Var Stats.' },
   { name: 'MinY', category: 'stats', kind: 'constant', syntax: 'MinY', description: 'Minimum of y from the last 2-Var Stats.' },
   { name: 'MaxY', category: 'stats', kind: 'constant', syntax: 'MaxY', description: 'Maximum of y from the last 2-Var Stats.' },
+
+  // ---- Graphing ---------------------------------------------------------------
+  { name: 'Y1', category: 'graph', kind: 'constant', syntax: 'Y0 … Y9', description: 'The 10 function variables. Define one by storing a string: "X²"→Y1. Evaluate it at a value with Y1(x). A Y-variable with an empty definition is skipped by DispGraph.' },
+  { name: 'Xmin', category: 'graph', kind: 'constant', syntax: 'Xmin', description: 'Left edge of the graph window (default -10).' },
+  { name: 'Xmax', category: 'graph', kind: 'constant', syntax: 'Xmax', description: 'Right edge of the graph window (default 10).' },
+  { name: 'Xscl', category: 'graph', kind: 'constant', syntax: 'Xscl', description: 'Spacing between x-axis tick marks (default 1).' },
+  { name: 'Ymin', category: 'graph', kind: 'constant', syntax: 'Ymin', description: 'Bottom edge of the graph window (default -10).' },
+  { name: 'Ymax', category: 'graph', kind: 'constant', syntax: 'Ymax', description: 'Top edge of the graph window (default 10).' },
+  { name: 'Yscl', category: 'graph', kind: 'constant', syntax: 'Yscl', description: 'Spacing between y-axis tick marks (default 1).' },
+  { name: 'Xres', category: 'graph', kind: 'constant', syntax: 'Xres', description: 'Pixel-column resolution for function plotting (1-8, default 1). Kept for compatibility; every column is always evaluated.' },
+  { name: 'DispGraph', category: 'graph', kind: 'statement', syntax: 'DispGraph', description: 'Clears the graph screen, draws the axes, and plots every defined Y-variable over the current window.' },
+  { name: 'ClrDraw', category: 'graph', kind: 'statement', syntax: 'ClrDraw', description: 'Clears the graph screen (pixels only; the window and Y-variables are untouched).' },
+  { name: 'Line(', category: 'graph', kind: 'statement', syntax: 'Line(X1,Y1,X2,Y2[,0])', description: 'Draws a line between two points in graph coordinates. A trailing 0 erases instead of draws.' },
+  { name: 'Circle(', category: 'graph', kind: 'statement', syntax: 'Circle(X,Y,radius)', description: 'Draws a circle outline centered at (X,Y) with the given radius, in graph coordinates.' },
+  { name: 'Pxl-On(', category: 'graph', kind: 'statement', syntax: 'Pxl-On(row,col)', description: 'Turns on one pixel (row 0-62, col 0-94) on the graph screen.' },
+  { name: 'Pxl-Off(', category: 'graph', kind: 'statement', syntax: 'Pxl-Off(row,col)', description: 'Turns off one pixel (row 0-62, col 0-94) on the graph screen.' },
+  { name: 'Pxl-Change(', category: 'graph', kind: 'statement', syntax: 'Pxl-Change(row,col)', description: 'Toggles one pixel (row 0-62, col 0-94) on the graph screen.' },
+  { name: 'pxl-Test(', category: 'graph', kind: 'function', syntax: 'pxl-Test(row,col)', description: 'Returns 1 if the given pixel is on, else 0.' },
 
   // ---- Strings ---------------------------------------------------------------
   { name: 'length(', category: 'string', kind: 'function', syntax: 'length(string)', description: 'Returns the number of characters in a string.' },
@@ -179,13 +198,15 @@ export const COMMANDS: CommandSpec[] = [
 export const INFIX_WORD_OPERATORS = new Set(['and', 'or', 'xor', 'nCr', 'nPr'])
 
 /**
- * Statistics/regression result names that behave exactly like a real
- * variable (readable, writable, and eligible for implicit multiplication)
- * rather than like a command — the lexer gives these the VAR token type,
- * reusing all of the existing single-letter-variable machinery instead of
+ * Multi-character reserved names — statistics/regression results and the
+ * graph window variables — that behave exactly like a real variable
+ * (readable, writable, and eligible for implicit multiplication) rather
+ * than like a command. The lexer gives these the VAR token type, reusing
+ * all of the existing single-letter-variable machinery instead of
  * introducing a parallel AST node.
  */
-export const STAT_VAR_NAMES = new Set([
+export const RESERVED_VAR_NAMES = new Set([
+  // Statistics / regression
   'n',
   'a',
   'b',
@@ -208,6 +229,14 @@ export const STAT_VAR_NAMES = new Set([
   'σy',
   'MinY',
   'MaxY',
+  // Graph window
+  'Xmin',
+  'Xmax',
+  'Xscl',
+  'Ymin',
+  'Ymax',
+  'Yscl',
+  'Xres',
 ])
 
 export function findCommand(name: string): CommandSpec | undefined {

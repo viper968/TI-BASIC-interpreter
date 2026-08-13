@@ -17,6 +17,7 @@ export type Expr =
   | { type: 'Matrix'; name: string } // whole matrix, e.g. [A]
   | { type: 'MatrixElement'; name: string; row: Expr; col: Expr } // [A](1,2)
   | { type: 'MatrixLiteral'; rows: Expr[][] } // [[1,2][3,4]]
+  | { type: 'YCall'; name: string; arg: Expr } // Y1(x): evaluate the stored definition at x
 
 export type BinaryOp =
   | '+'
@@ -46,6 +47,7 @@ export type StoreTarget =
   | { type: 'MatrixElement'; name: string; row: Expr; col: Expr }
   /** {rows[,cols]}->dim(L1) or {rows,cols}->dim([A]): resizes/(re)creates the target. */
   | { type: 'Dim'; target: { type: 'List'; name: string } | { type: 'Matrix'; name: string } }
+  | { type: 'YVar'; name: string } // "expr"→Y1: defines the function
 
 export interface MenuOption {
   text: Expr
@@ -84,6 +86,13 @@ export type Stmt =
   | { kind: 'OneVarStats'; xList: string; freqList: string | null }
   | { kind: 'TwoVarStats'; xList: string; yList: string; freqList: string | null }
   | { kind: 'LinReg'; xList: string; yList: string; freqList: string | null }
+  | { kind: 'DispGraph' }
+  | { kind: 'ClrDraw' }
+  | { kind: 'Line'; x1: Expr; y1: Expr; x2: Expr; y2: Expr; erase: Expr | null }
+  | { kind: 'Circle'; x: Expr; y: Expr; radius: Expr }
+  | { kind: 'PxlOn'; row: Expr; col: Expr }
+  | { kind: 'PxlOff'; row: Expr; col: Expr }
+  | { kind: 'PxlChange'; row: Expr; col: Expr }
 
 /** One instruction slot in the compiled, flat program. */
 export interface Instruction {

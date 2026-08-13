@@ -39,11 +39,15 @@ own dialects and command sets; this project doesn't try to emulate those.
     distribution (mean/median/stdDev/quartiles/`linreg`/`normalCdf01`/
     `invNormStd`) as plain `number[]` functions, same independence as
     `matrix.ts`.
+  - `graph.ts` — the 95×63 graph pixel buffer and graph-coordinate math
+    (window-to-pixel mapping, Bresenham line drawing, midpoint circle
+    drawing) as plain functions, same independence as `matrix.ts`/`stats.ts`.
 - **`src/components/`, `src/state/`, `src/App.tsx`** — the React GUI: a
   program manager, a syntax-highlighted code editor with live diagnostics,
   a TI-84-style calculator screen that actually runs programs (including
-  interactive `Input`/`Prompt`/`Menu(`/`Pause`), a keypad for inserting
-  tokens, and a searchable command reference.
+  interactive `Input`/`Prompt`/`Menu(`/`Pause`), a canvas-rendered Graph
+  tab for `DispGraph`/drawing output, a keypad for inserting tokens, and a
+  searchable command reference.
 
 ## Try it
 
@@ -125,11 +129,36 @@ keyboard-untypable combining-macron glyph); everything else — `n`, `a`,
 like an ordinary variable (readable, writable, usable in expressions)
 rather than a special AST node. See the `STATS` sample program.
 
+**Graphing:** the 10 function variables `Y0`-`Y9` — define one by storing a
+string (`"X²"->Y1`) and evaluate it at a value with `Y1(x)` (a bare `Y1`
+with no call parens is a syntax error, since a Y-variable is only ever used
+as a callable, never read directly); the window variables `Xmin`/`Xmax`/
+`Xscl`/`Ymin`/`Ymax`/`Yscl`/`Xres` (ordinary real variables, defaulting to
+the standard TI-84 window: -10 to 10 on both axes, scale 1); a 95×63-pixel
+graph screen, entirely separate from the 8×16 text screen (matching real
+`Pxl-On(`/`pxl-Test(` addressable resolution — the physical LCD is 96×64,
+one row/col larger); `DispGraph`, which clears the graph screen, draws the
+X/Y axes, and plots every Y-variable with a non-empty definition; `ClrDraw`
+(clears pixels only — the window and Y-variables are untouched);
+`Line(X1,Y1,X2,Y2[,0])` and `Circle(X,Y,radius)` (drawn in graph
+coordinates, with an optional trailing 0 on `Line(` to erase instead of
+draw); and the raw pixel primitives `Pxl-On(`/`Pxl-Off(`/`Pxl-Change(`/
+`pxl-Test(` (row 0-62, col 0-94). Two deliberate simplifications, both
+documented rather than hidden: evaluating a Y-variable permanently sets
+`X` to the value it was called with, matching a well-known real-hardware
+quirk instead of sandboxing it away; and there's no separate per-function
+enabled/disabled toggle — a Y-variable counts as "on" for `DispGraph`
+purely by having a non-empty definition. See the `GRAPH` sample program,
+and the app's **Graph** tab.
+
 Open the **Commands** tab in the app for the full, searchable list with
 syntax and descriptions — it's generated straight from
 `src/interpreter/commands.ts`. The **Calculator** tab also shows a live
 **Variables** watch panel (real vars, strings, lists, and matrices
-currently holding a non-default value) while a program runs or is paused.
+currently holding a non-default value) while a program runs or is paused;
+window variables are omitted there since they always hold a non-default
+value — see them on the **Graph** tab instead, alongside the pixel screen
+and the current Y-variable definitions.
 
 A generous but finite execution-step cap guards against runaway loops
 freezing the browser tab (real hardware has no such limit, but a web page
@@ -141,26 +170,22 @@ Ranked by (real-world usefulness) ÷ (implementation cost) — earlier items
 are more likely to land next.
 
 1. ~~**Matrices**~~ — done: see "Supported language" above.
-2. ~~**Statistics**~~ — done: see "Supported language" above. (Stat *plots* —
-   scatter/box plots — are deliberately excluded from this and bundled
-   into the graphing phase below instead, since they need the pixel
-   screen; other regression types besides `LinReg(ax+b)`, e.g. `QuadReg`/
-   `CubicReg`, are still long-tail.)
-3. **Graphing** — the big one. `Y1`-`Y9` function variables, window
-   variables (`Xmin`/`Xmax`/`Ymin`/`Ymax`/`Xscl`/`Yscl`), a 96×64 *pixel*
-   graph screen (a genuinely different display model from the 8×16 text
-   screen this app has today), function plotting, `DispGraph`, drawing
-   primitives (`Line(`, `Circle(`, `Pxl-On(`/`Pxl-Off(`/`pxl-Change(`,
-   `Shade(`), and ideally a trace cursor. Roughly as much work as
-   everything built so far, combined.
+2. ~~**Statistics**~~ — done: see "Supported language" above. (Other
+   regression types besides `LinReg(ax+b)`, e.g. `QuadReg`/`CubicReg`, are
+   still long-tail.)
+3. ~~**Graphing**~~ — done: see "Supported language" above. `Y0`-`Y9`
+   function variables, window variables, a 95×63 pixel graph screen,
+   function plotting via `DispGraph`, `ClrDraw`, and the drawing primitives
+   `Line(`/`Circle(`/`Pxl-On(`/`Pxl-Off(`/`Pxl-Change(`/`pxl-Test(`. Stat
+   *plots* (scatter/box plots), `Shade(`, and a trace cursor are not
+   included — moved to the long tail below.
 4. **Complex numbers** — `i`, complex arithmetic, `a+bi`/`re^θi` display
    modes. Touches more of the codebase than it looks (every math builtin
-   needs a complex-aware path or an explicit "still real-only" error), and
-   is less common in typical intro-level programs than matrices/stats, so
-   it's ranked after graphing rather than before it.
-5. **Long tail**, done opportunistically: `SortA(`/`SortD(`, `ClrList`,
-   `cumSum(`, `ΔList(`, `InString(`, calculus tools (`nDeriv(`, `fnInt(`,
-   `solve(`, `fMin(`/`fMax(`), other regression types (`QuadReg`,
+   needs a complex-aware path or an explicit "still real-only" error).
+5. **Long tail**, done opportunistically: stat plots (scatter/box, drawn
+   onto the graph screen), `Shade(`, a trace cursor, `SortA(`/`SortD(`,
+   `ClrList`, `cumSum(`, `ΔList(`, `InString(`, calculus tools (`nDeriv(`,
+   `fnInt(`, `solve(`, `fMin(`/`fMax(`), other regression types (`QuadReg`,
    `CubicReg`, ...), user-named lists beyond `L1`-`L6`, remaining CATALOG
    stragglers.
 

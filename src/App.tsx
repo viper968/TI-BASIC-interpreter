@@ -10,8 +10,9 @@ import { ProgramList } from './components/ProgramList'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { CommandReference } from './components/CommandReference'
 import { VariableWatch } from './components/VariableWatch'
+import { GraphScreen } from './components/GraphScreen'
 
-type RightTab = 'calculator' | 'commands'
+type RightTab = 'calculator' | 'graph' | 'commands'
 
 export default function App() {
   const lib = useProgramLibrary()
@@ -94,11 +95,14 @@ export default function App() {
             <button className={rightTab === 'calculator' ? 'tab tab-active' : 'tab'} onClick={() => setRightTab('calculator')}>
               Calculator
             </button>
+            <button className={rightTab === 'graph' ? 'tab tab-active' : 'tab'} onClick={() => setRightTab('graph')}>
+              Graph
+            </button>
             <button className={rightTab === 'commands' ? 'tab tab-active' : 'tab'} onClick={() => setRightTab('commands')}>
               Commands
             </button>
           </div>
-          {rightTab === 'calculator' ? (
+          {rightTab === 'calculator' && (
             <>
               <CalculatorScreen
                 screenRows={calc.screenRows}
@@ -110,16 +114,16 @@ export default function App() {
               />
               <VariableWatch vars={calc.vars} strVars={calc.strVars} lists={calc.lists} matrices={calc.matrices} />
             </>
-          ) : (
-            <CommandReference onInsert={(text) => editorRef.current?.insertAtCursor(text)} />
           )}
+          {rightTab === 'graph' && <GraphScreen graphScreen={calc.graphScreen} vars={calc.vars} yVars={calc.yVars} />}
+          {rightTab === 'commands' && <CommandReference onInsert={(text) => editorRef.current?.insertAtCursor(text)} />}
         </section>
       </main>
 
       <footer className="app-footer">
         <p>
-          Scope: TI-84 Plus / TI-84 Plus Silver Edition TI-BASIC only (no complex numbers, stat plots, or graphing commands
-          yet — see the README roadmap). Angle mode defaults to Degree; switch with the Degree/Radian commands.
+          Scope: TI-84 Plus / TI-84 Plus Silver Edition TI-BASIC only (no complex numbers, stat plots, or a trace cursor yet
+          — see the README roadmap). Angle mode defaults to Degree; switch with the Degree/Radian commands.
         </p>
       </footer>
     </div>

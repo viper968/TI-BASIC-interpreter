@@ -25,7 +25,22 @@ import * as mat from './matrix'
 import * as stats from './stats'
 import { BUILTINS, type AngleMode, type BuiltinCtx, factorial } from './builtins'
 import { SCREEN_COLS, SCREEN_ROWS, type Screen, clearScreen, createScreen, dispLine, writeAt } from './screen'
-import { STAT_VAR_NAMES } from './commands'
+import { RESERVED_VAR_NAMES } from './commands'
+import {
+  GRAPH_COLS,
+  GRAPH_ROWS,
+  type GraphScreen,
+  type Window,
+  clearGraphScreen,
+  colToX,
+  createGraphScreen,
+  drawCircle,
+  drawLine,
+  getPixel,
+  setPixel,
+  xToCol,
+  yToRow,
+} from './graph'
 
 // ---------------------------------------------------------------------------
 // Compilation
@@ -51,12 +66,17 @@ const REAL_VAR_NAMES = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'θ']
 const STR_VAR_NAMES = Array.from({ length: 10 }, (_, i) => `Str${i}`)
 const LIST_NAMES = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6']
 const MATRIX_NAMES = [...'ABCDEFGHIJ']
+const YVAR_NAMES = Array.from({ length: 10 }, (_, i) => `Y${i}`)
 
 export interface InterpreterState {
   vars: Record<string, number>
   strVars: Record<string, string>
   lists: Record<string, number[]>
   matrices: Record<string, number[][]>
+  /** Y0-Y9 function definitions, as raw (unparsed) expression text; '' = undefined. */
+  yVars: Record<string, string>
+  /** The 95x63 graph pixel buffer drawn by DispGraph/ClrDraw/Line(/Circle(/Pxl-*. */
+  graphScreen: GraphScreen
   ans: Value
   angleMode: AngleMode
   /** MODE screen: Normal/Sci/Eng notation. */
@@ -70,18 +90,30 @@ export interface InterpreterState {
 export function createInterpreterState(): InterpreterState {
   const vars: Record<string, number> = {}
   for (const n of REAL_VAR_NAMES) vars[n] = 0
-  for (const n of STAT_VAR_NAMES) vars[n] = 0
+  for (const n of RESERVED_VAR_NAMES) vars[n] = 0
+  // Graph window variable defaults, matching a freshly-reset TI-84.
+  vars['Xmin'] = -10
+  vars['Xmax'] = 10
+  vars['Xscl'] = 1
+  vars['Ymin'] = -10
+  vars['Ymax'] = 10
+  vars['Yscl'] = 1
+  vars['Xres'] = 1
   const strVars: Record<string, string> = {}
   for (const n of STR_VAR_NAMES) strVars[n] = ''
   const lists: Record<string, number[]> = {}
   for (const n of LIST_NAMES) lists[n] = []
   const matrices: Record<string, number[][]> = {}
   for (const n of MATRIX_NAMES) matrices[n] = []
+  const yVars: Record<string, string> = {}
+  for (const n of YVAR_NAMES) yVars[n] = ''
   return {
     vars,
     strVars,
     lists,
     matrices,
+    yVars,
+    graphScreen: createGraphScreen(),
     ans: num(0),
     angleMode: 'degree',
     notation: 'normal',
@@ -233,6 +265,34 @@ class Runner {
       }
       case 'MatrixLiteral':
         return matrix(expr.rows.map((row) => row.map((e) => requireNumber(this.evalExpr(e), 'a number in a matrix literal'))))
+      case 'YCall': {
+        const def = this.state.yVars[expr.name]
+        if (!def) throw new TIError('ERR:UNDEFINED', `${expr.name} is not defined`)
+        const x = requireNumber(this.evalExpr(expr.arg), 'a number')
+        // Real hardware permanently sets X when a Y-variable is evaluated; we match that quirk.
+        this.state.vars['X'] = x
+        return this.evalExpr(this.parseYVarDef(expr.name, def))
+      }
+    }
+  }
+
+  /** Parses a Y-variable's stored definition text as a single expression. */
+  private parseYVarDef(name: string, text: string): Expr {
+    const { program, diagnostics } = parse(text)
+    const first = program.instructions[0]?.stmt
+    if (diagnostics.length > 0 || program.instructions.length !== 1 || !first || first.kind !== 'Expr') {
+      throw new TIError('ERR:SYNTAX', `${name} is not a valid expression`)
+    }
+    return first.expr
+  }
+
+  /** The current graph window, read from the Xmin/Xmax/Ymin/Ymax variables. */
+  private window(): Window {
+    return {
+      xMin: this.state.vars['Xmin'],
+      xMax: this.state.vars['Xmax'],
+      yMin: this.state.vars['Ymin'],
+      yMax: this.state.vars['Ymax'],
     }
   }
 
@@ -352,9 +412,17 @@ class Runner {
 
   private evalCall(name: string, argExprs: Expr[]): Value {
     if (name === 'seq(') return this.evalSeq(argExprs)
+    if (name === 'pxl-Test(') return this.evalPxlTest(argExprs)
     const fn = BUILTINS[name]
     if (!fn) throw new TIError('ERR:SYNTAX', `Unknown function ${name}`)
     return fn(argExprs.map((a) => this.evalExpr(a)), this.builtinCtx())
+  }
+
+  private evalPxlTest(argExprs: Expr[]): Value {
+    if (argExprs.length !== 2) throw new TIError('ERR:ARGUMENT', 'pxl-Test( requires row,col')
+    const row = Math.round(requireNumber(this.evalExpr(argExprs[0]), 'a row'))
+    const col = Math.round(requireNumber(this.evalExpr(argExprs[1]), 'a column'))
+    return num(getPixel(this.state.graphScreen, row, col) ? 1 : 0)
   }
 
   private evalSeq(argExprs: Expr[]): Value {
@@ -431,6 +499,9 @@ class Runner {
         }
         return
       }
+      case 'YVar':
+        this.state.yVars[target.name] = requireString(value, 'a string')
+        return
     }
   }
 
@@ -440,6 +511,7 @@ class Runner {
       case 'Var':
       case 'StrVar':
       case 'List':
+      case 'YVar':
         return t.name
       case 'Matrix':
         return `[${t.name}]`
@@ -673,7 +745,8 @@ class Runner {
         else if (t.type === 'StrVar') this.state.strVars[t.name] = ''
         else if (t.type === 'List') this.state.lists[t.name] = []
         else if (t.type === 'Matrix') this.state.matrices[t.name] = []
-        else throw new TIError('ERR:DATA TYPE', 'DelVar requires a variable, list, matrix, or Str')
+        else if (t.type === 'YVar') this.state.yVars[t.name] = ''
+        else throw new TIError('ERR:DATA TYPE', 'DelVar requires a variable, list, matrix, Y-variable, or Str')
         return { kind: 'next' }
       }
       case 'Fill': {
@@ -744,6 +817,99 @@ class Runner {
       case 'SetNotation':
         this.state.notation = stmt.mode
         return { kind: 'next' }
+      case 'DispGraph': {
+        const g = this.state.graphScreen
+        clearGraphScreen(g)
+        const w = this.window()
+        if (w.xMax === w.xMin || w.yMax === w.yMin) {
+          throw new TIError('ERR:DOMAIN', 'Xmin/Xmax and Ymin/Ymax must not be equal')
+        }
+        // Axes: the X-axis (row where y=0) and Y-axis (col where x=0), each only if in view.
+        if (w.yMin < 0 && w.yMax > 0) {
+          const row = yToRow(0, w)
+          for (let col = 0; col < GRAPH_COLS; col++) setPixel(g, row, col, true)
+        }
+        if (w.xMin < 0 && w.xMax > 0) {
+          const col = xToCol(0, w)
+          for (let row = 0; row < GRAPH_ROWS; row++) setPixel(g, row, col, true)
+        }
+        // Plot every Y-variable with a non-empty definition, column by column.
+        for (const name of YVAR_NAMES) {
+          const def = this.state.yVars[name]
+          if (!def) continue
+          const parsedExpr = this.parseYVarDef(name, def)
+          let prevRow: number | null = null
+          let prevCol: number | null = null
+          for (let col = 0; col < GRAPH_COLS; col++) {
+            const x = colToX(col, w)
+            this.state.vars['X'] = x
+            let y: number
+            try {
+              y = requireNumber(this.evalExpr(parsedExpr), 'a number')
+            } catch {
+              prevRow = null
+              prevCol = null
+              continue
+            }
+            if (!Number.isFinite(y)) {
+              prevRow = null
+              prevCol = null
+              continue
+            }
+            const row = yToRow(y, w)
+            if (prevRow !== null && prevCol !== null) {
+              drawLine(g, prevRow, prevCol, row, col)
+            } else {
+              setPixel(g, row, col, true)
+            }
+            prevRow = row
+            prevCol = col
+          }
+          yield { type: 'tick' }
+        }
+        yield { type: 'tick' }
+        return { kind: 'next' }
+      }
+      case 'ClrDraw': {
+        clearGraphScreen(this.state.graphScreen)
+        yield { type: 'tick' }
+        return { kind: 'next' }
+      }
+      case 'Line': {
+        const w = this.window()
+        const x1 = requireNumber(this.evalExpr(stmt.x1), 'a number')
+        const y1 = requireNumber(this.evalExpr(stmt.y1), 'a number')
+        const x2 = requireNumber(this.evalExpr(stmt.x2), 'a number')
+        const y2 = requireNumber(this.evalExpr(stmt.y2), 'a number')
+        const on = stmt.erase ? requireNumber(this.evalExpr(stmt.erase), 'a number') !== 0 : true
+        drawLine(this.state.graphScreen, yToRow(y1, w), xToCol(x1, w), yToRow(y2, w), xToCol(x2, w), on)
+        yield { type: 'tick' }
+        return { kind: 'next' }
+      }
+      case 'Circle': {
+        const w = this.window()
+        const cx = requireNumber(this.evalExpr(stmt.x), 'a number')
+        const cy = requireNumber(this.evalExpr(stmt.y), 'a number')
+        const radius = requireNumber(this.evalExpr(stmt.radius), 'a number')
+        const radiusPx = Math.round((radius * (GRAPH_COLS - 1)) / (w.xMax - w.xMin))
+        drawCircle(this.state.graphScreen, yToRow(cy, w), xToCol(cx, w), radiusPx)
+        yield { type: 'tick' }
+        return { kind: 'next' }
+      }
+      case 'PxlOn':
+      case 'PxlOff':
+      case 'PxlChange': {
+        const row = Math.round(requireNumber(this.evalExpr(stmt.row), 'a pixel row (0-62)'))
+        const col = Math.round(requireNumber(this.evalExpr(stmt.col), 'a pixel column (0-94)'))
+        if (row < 0 || row >= GRAPH_ROWS || col < 0 || col >= GRAPH_COLS) {
+          throw new TIError('ERR:DOMAIN', `Pixel row/col must be within 0-${GRAPH_ROWS - 1} / 0-${GRAPH_COLS - 1}`)
+        }
+        if (stmt.kind === 'PxlOn') setPixel(this.state.graphScreen, row, col, true)
+        else if (stmt.kind === 'PxlOff') setPixel(this.state.graphScreen, row, col, false)
+        else setPixel(this.state.graphScreen, row, col, !getPixel(this.state.graphScreen, row, col))
+        yield { type: 'tick' }
+        return { kind: 'next' }
+      }
     }
   }
 

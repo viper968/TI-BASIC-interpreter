@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import {
   type CompiledProgram,
+  type GraphScreen,
   type InterpreterState,
   type ProgramResolver,
   type ResumeValue,
@@ -40,6 +41,8 @@ export function useCalculator() {
   const [strVars, setStrVars] = useState<Record<string, string>>({})
   const [lists, setLists] = useState<Record<string, number[]>>({})
   const [matrices, setMatrices] = useState<Record<string, number[][]>>({})
+  const [yVars, setYVars] = useState<Record<string, string>>({})
+  const [graphScreen, setGraphScreen] = useState<GraphScreen | null>(null)
 
   const genRef = useRef<Generator<RunEvent, void, ResumeValue> | null>(null)
   const vmStateRef = useRef<InterpreterState | null>(null)
@@ -53,6 +56,8 @@ export function useCalculator() {
     setStrVars({ ...s.strVars })
     setLists({ ...s.lists })
     setMatrices({ ...s.matrices })
+    setYVars({ ...s.yVars })
+    setGraphScreen({ pixels: s.graphScreen.pixels.map((row) => [...row]) })
   }, [])
 
   const settle = useCallback(
@@ -162,5 +167,5 @@ export function useCalculator() {
     [pump],
   )
 
-  return { screenRows, status, pending, error, vars, strVars, lists, matrices, runSource, resume, stop }
+  return { screenRows, status, pending, error, vars, strVars, lists, matrices, yVars, graphScreen, runSource, resume, stop }
 }

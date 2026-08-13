@@ -170,4 +170,17 @@ describe('lexer', () => {
     expect(tokenize('Sumx').tokens[0]).toMatchObject({ type: 'VAR', text: 'Σx' })
     expect(tokenize('sigmax').tokens[0]).toMatchObject({ type: 'VAR', text: 'σx' })
   })
+
+  it('tokenizes Y0-Y9 as a single YVAR token', () => {
+    expect(tokenize('Y1').tokens[0]).toMatchObject({ type: 'YVAR', text: 'Y1' })
+    expect(tokenize('Y0').tokens[0]).toMatchObject({ type: 'YVAR', text: 'Y0' })
+    // Not part of Y0-Y9: a bare "Y" is just a real variable.
+    expect(types('Y')).toEqual(['VAR', 'EOF'])
+  })
+
+  it('tokenizes graph window variable names as VAR tokens', () => {
+    for (const name of ['Xmin', 'Xmax', 'Xscl', 'Ymin', 'Ymax', 'Yscl', 'Xres']) {
+      expect(tokenize(name).tokens[0]).toMatchObject({ type: 'VAR', text: name })
+    }
+  })
 })

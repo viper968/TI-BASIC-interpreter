@@ -26,6 +26,11 @@ const STATEMENT_ONLY_KEYWORDS = new Set([
   '1-Var Stats',
   '2-Var Stats',
   'LinReg(ax+b)',
+  'Line(',
+  'Circle(',
+  'Pxl-On(',
+  'Pxl-Off(',
+  'Pxl-Change(',
 ])
 
 /** Tokens that legitimately end a statement. */
@@ -185,6 +190,22 @@ class Parser {
           return this.parseTwoVarStats()
         case 'LinReg(ax+b)':
           return this.parseLinReg()
+        case 'DispGraph':
+          this.advance()
+          return { kind: 'DispGraph' }
+        case 'ClrDraw':
+          this.advance()
+          return { kind: 'ClrDraw' }
+        case 'Line(':
+          return this.parseLine()
+        case 'Circle(':
+          return this.parseCircle()
+        case 'Pxl-On(':
+          return this.parsePxl('PxlOn')
+        case 'Pxl-Off(':
+          return this.parsePxl('PxlOff')
+        case 'Pxl-Change(':
+          return this.parsePxl('PxlChange')
         default:
           break
       }
@@ -385,6 +406,44 @@ class Parser {
     return { kind: 'LinReg', xList, yList, freqList }
   }
 
+  private parseLine(): Stmt {
+    this.advance() // Line(
+    const x1 = this.parseExpr()
+    this.expect('COMMA', '","')
+    const y1 = this.parseExpr()
+    this.expect('COMMA', '","')
+    const x2 = this.parseExpr()
+    this.expect('COMMA', '","')
+    const y2 = this.parseExpr()
+    let erase: Expr | null = null
+    if (this.current().type === 'COMMA') {
+      this.advance()
+      erase = this.parseExpr()
+    }
+    this.expect('RPAREN', '")"')
+    return { kind: 'Line', x1, y1, x2, y2, erase }
+  }
+
+  private parseCircle(): Stmt {
+    this.advance() // Circle(
+    const x = this.parseExpr()
+    this.expect('COMMA', '","')
+    const y = this.parseExpr()
+    this.expect('COMMA', '","')
+    const radius = this.parseExpr()
+    this.expect('RPAREN', '")"')
+    return { kind: 'Circle', x, y, radius }
+  }
+
+  private parsePxl(kind: 'PxlOn' | 'PxlOff' | 'PxlChange'): Stmt {
+    this.advance() // Pxl-On( / Pxl-Off( / Pxl-Change(
+    const row = this.parseExpr()
+    this.expect('COMMA', '","')
+    const col = this.parseExpr()
+    this.expect('RPAREN', '")"')
+    return { kind, row, col }
+  }
+
   private parseInput(): Stmt {
     this.advance() // Input
     if (isStmtEnd(this.current())) return { kind: 'Input', prompt: null, target: null }
@@ -479,7 +538,11 @@ class Parser {
       this.expect('RPAREN', '")"')
       return { type: 'Dim', target }
     }
-    this.error('Expected a variable, list, matrix, or Str to store into', tok)
+    if (tok.type === 'YVAR') {
+      this.advance()
+      return { type: 'YVar', name: tok.text }
+    }
+    this.error('Expected a variable, list, matrix, Y-variable, or Str to store into', tok)
   }
 
   // --- Expressions (lowest to highest precedence) --------------------
@@ -533,7 +596,7 @@ class Parser {
   private canStartImplicitFactor(tok: Token): boolean {
     if (tok.type === 'NUMBER' || tok.type === 'VAR' || tok.type === 'LIST' || tok.type === 'STRVAR') return true
     if (tok.type === 'ANS' || tok.type === 'PI' || tok.type === 'EULER' || tok.type === 'LPAREN') return true
-    if (tok.type === 'MATRIX') return true
+    if (tok.type === 'MATRIX' || tok.type === 'YVAR') return true
     if (tok.type === 'KEYWORD' && tok.text.endsWith('(') && !STATEMENT_ONLY_KEYWORDS.has(tok.text)) return true
     return false
   }
@@ -666,6 +729,16 @@ class Parser {
           return { type: 'MatrixElement', name, row, col }
         }
         return { type: 'Matrix', name }
+      }
+      case 'YVAR': {
+        this.advance()
+        if (this.current().type !== 'LPAREN') {
+          this.error(`${tok.text} must be called like ${tok.text}(x) — it can't be read as a bare value`)
+        }
+        this.advance()
+        const arg = this.parseExpr()
+        this.expect('RPAREN', '")"')
+        return { type: 'YCall', name: tok.text, arg }
       }
       case 'LBRACKET': {
         // A matrix literal: [[1,2,3][4,5,6]] — one or more row-brackets,

@@ -353,4 +353,78 @@ describe('parser: statements', () => {
     const { diagnostics } = parse('Disp 1-Var Stats')
     expect(diagnostics.length).toBeGreaterThan(0)
   })
+
+  it('parses storing a string into a Y-variable', () => {
+    const { program, diagnostics } = parse('"X²"->Y1')
+    expect(diagnostics).toHaveLength(0)
+    expect(program.instructions[0].stmt).toEqual({
+      kind: 'Store',
+      expr: { type: 'String', value: 'X²' },
+      target: { type: 'YVar', name: 'Y1' },
+    })
+  })
+
+  it('parses a Y-variable call', () => {
+    const { program, diagnostics } = parse('Y1(3)')
+    expect(diagnostics).toHaveLength(0)
+    const stmt = program.instructions[0].stmt
+    if (stmt.kind !== 'Expr') throw new Error('expected Expr')
+    expect(stmt.expr).toEqual({ type: 'YCall', name: 'Y1', arg: { type: 'Number', value: 3 } })
+  })
+
+  it('rejects a bare Y-variable with no call parens', () => {
+    const { diagnostics } = parse('Disp Y1')
+    expect(diagnostics.length).toBeGreaterThan(0)
+  })
+
+  it('parses DispGraph and ClrDraw', () => {
+    expect(parse('DispGraph').program.instructions[0].stmt).toEqual({ kind: 'DispGraph' })
+    expect(parse('ClrDraw').program.instructions[0].stmt).toEqual({ kind: 'ClrDraw' })
+  })
+
+  it('parses Line( with and without the erase argument', () => {
+    const drawn = parse('Line(0,0,5,5)')
+    expect(drawn.diagnostics).toHaveLength(0)
+    expect(drawn.program.instructions[0].stmt).toEqual({
+      kind: 'Line',
+      x1: { type: 'Number', value: 0 },
+      y1: { type: 'Number', value: 0 },
+      x2: { type: 'Number', value: 5 },
+      y2: { type: 'Number', value: 5 },
+      erase: null,
+    })
+
+    const erased = parse('Line(0,0,5,5,0)')
+    expect(erased.diagnostics).toHaveLength(0)
+    const stmt = erased.program.instructions[0].stmt
+    if (stmt.kind !== 'Line') throw new Error('expected Line')
+    expect(stmt.erase).toEqual({ type: 'Number', value: 0 })
+  })
+
+  it('parses Circle(', () => {
+    const { program, diagnostics } = parse('Circle(0,0,5)')
+    expect(diagnostics).toHaveLength(0)
+    expect(program.instructions[0].stmt).toEqual({
+      kind: 'Circle',
+      x: { type: 'Number', value: 0 },
+      y: { type: 'Number', value: 0 },
+      radius: { type: 'Number', value: 5 },
+    })
+  })
+
+  it('parses Pxl-On(/Pxl-Off(/Pxl-Change(', () => {
+    expect(parse('Pxl-On(1,2)').program.instructions[0].stmt).toEqual({
+      kind: 'PxlOn',
+      row: { type: 'Number', value: 1 },
+      col: { type: 'Number', value: 2 },
+    })
+    expect(parse('Pxl-Off(1,2)').program.instructions[0].stmt).toMatchObject({ kind: 'PxlOff' })
+    expect(parse('Pxl-Change(1,2)').program.instructions[0].stmt).toMatchObject({ kind: 'PxlChange' })
+  })
+
+  it('parses window variables as ordinary variables', () => {
+    const { program, diagnostics } = parse('-5->Xmin')
+    expect(diagnostics).toHaveLength(0)
+    expect(program.instructions[0].stmt).toMatchObject({ kind: 'Store', target: { type: 'Var', name: 'Xmin' } })
+  })
 })
