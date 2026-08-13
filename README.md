@@ -42,6 +42,10 @@ own dialects and command sets; this project doesn't try to emulate those.
   - `graph.ts` — the 95×63 graph pixel buffer and graph-coordinate math
     (window-to-pixel mapping, Bresenham line drawing, midpoint circle
     drawing) as plain functions, same independence as `matrix.ts`/`stats.ts`.
+  - `complex.ts` — complex number arithmetic (add/subtract/multiply/divide/
+    `exp`/`log`/`pow`, the last two used together to compute *any* power,
+    real or complex, via a^b = e^(b·ln(a))) as plain functions over a
+    `{re,im}` pair, same independence as `matrix.ts`/`stats.ts`/`graph.ts`.
 - **`src/components/`, `src/state/`, `src/App.tsx`** — the React GUI: a
   program manager, a syntax-highlighted code editor with live diagnostics,
   a TI-84-style calculator screen that actually runs programs (including
@@ -151,14 +155,41 @@ enabled/disabled toggle — a Y-variable counts as "on" for `DispGraph`
 purely by having a non-empty definition. See the `GRAPH` sample program,
 and the app's **Graph** tab.
 
+**Complex numbers:** the imaginary unit `i` (`i²=-1`), built into ordinary
+arithmetic — `3+4i` just works, the same way `2X` does, via implicit
+multiplication. `+`/`-`/`*`/`/`/`^`/`=`/`≠`, `²`, and `⁻¹` all accept a
+complex operand (`<`/`>`/`≤`/`≥` don't — comparing complex numbers isn't
+meaningful, so those raise `ERR:DATA TYPE`, matching real hardware); `^`
+handles every case — a complex base or exponent, or even a *real* base
+raised to a fractional power (e.g. `(-8)^(1/3)`) — through one formula
+(`a^b = e^(b·ln(a))`) instead of a case per situation. `real(`, `imag(`,
+`conj(`, and `angle(` extract a complex number's parts (a plain real number
+passes through `real(`/`conj(` unchanged, and reads as `0` from `imag(`);
+`abs(` and `round(` are extended to accept a complex argument too (`abs(`
+returning the magnitude). `A`-`Z`/`θ` can hold a complex value exactly like
+real hardware — `(2+3i)->Z` then `Disp Z` works — alongside their existing
+real-number storage. Three MODE-row commands, `Real` (this interpreter's
+default) / `a+bi` / `re^θi`, control what happens when a *real*-only
+operation would produce a non-real result: `√(-4)`, `ln(-1)`, `log(-1)`,
+and a negative base to a fractional power all raise `ERR:NONREAL ANS` in
+Real mode (matching real hardware) but return a complex number — displayed
+in rectangular `a+bi` or polar `r*e^(θi)` form, per the mode — in the other
+two. Arithmetic on a complex number you built explicitly with `i` always
+works, in every mode; the mode only gates results that start real and
+would *become* non-real. Complex numbers are deliberately scoped out of
+lists and matrices (an entry can't be complex) — real hardware supports
+this, but it's a meaningfully bigger feature (broadcasting, formatting,
+every list/matrix builtin gaining a complex path) for less real-world
+payoff than the scalar case. See the `COMPLEX` sample program.
+
 Open the **Commands** tab in the app for the full, searchable list with
 syntax and descriptions — it's generated straight from
 `src/interpreter/commands.ts`. The **Calculator** tab also shows a live
-**Variables** watch panel (real vars, strings, lists, and matrices
-currently holding a non-default value) while a program runs or is paused;
-window variables are omitted there since they always hold a non-default
-value — see them on the **Graph** tab instead, alongside the pixel screen
-and the current Y-variable definitions.
+**Variables** watch panel (real vars, strings, lists, matrices, and now
+complex-valued vars, each currently holding a non-default value) while a
+program runs or is paused; window variables are omitted there since they
+always hold a non-default value — see them on the **Graph** tab instead,
+alongside the pixel screen and the current Y-variable definitions.
 
 A generous but finite execution-step cap guards against runaway loops
 freezing the browser tab (real hardware has no such limit, but a web page
@@ -179,15 +210,17 @@ are more likely to land next.
    `Line(`/`Circle(`/`Pxl-On(`/`Pxl-Off(`/`Pxl-Change(`/`pxl-Test(`. Stat
    *plots* (scatter/box plots), `Shade(`, and a trace cursor are not
    included — moved to the long tail below.
-4. **Complex numbers** — `i`, complex arithmetic, `a+bi`/`re^θi` display
-   modes. Touches more of the codebase than it looks (every math builtin
-   needs a complex-aware path or an explicit "still real-only" error).
+4. ~~**Complex numbers**~~ — done: see "Supported language" above. `i`,
+   complex arithmetic (`+`/`-`/`*`/`/`/`^`/`²`/`⁻¹`), `real(`/`imag(`/
+   `conj(`/`angle(`, complex-aware `abs(`/`round(`, complex-valued
+   variables, and the `Real`/`a+bi`/`re^θi` mode commands. Complex lists
+   and matrices are out — moved to the long tail below.
 5. **Long tail**, done opportunistically: stat plots (scatter/box, drawn
-   onto the graph screen), `Shade(`, a trace cursor, `SortA(`/`SortD(`,
-   `ClrList`, `cumSum(`, `ΔList(`, `InString(`, calculus tools (`nDeriv(`,
-   `fnInt(`, `solve(`, `fMin(`/`fMax(`), other regression types (`QuadReg`,
-   `CubicReg`, ...), user-named lists beyond `L1`-`L6`, remaining CATALOG
-   stragglers.
+   onto the graph screen), `Shade(`, a trace cursor, complex lists/matrices,
+   `SortA(`/`SortD(`, `ClrList`, `cumSum(`, `ΔList(`, `InString(`, calculus
+   tools (`nDeriv(`, `fnInt(`, `solve(`, `fMin(`/`fMax(`), other regression
+   types (`QuadReg`, `CubicReg`, ...), user-named lists beyond `L1`-`L6`,
+   remaining CATALOG stragglers.
 
 **Permanently out of scope**, worth saying explicitly rather than leaving
 as an open question:

@@ -10,6 +10,7 @@ export type TokenType =
   | 'ANS'
   | 'PI'
   | 'EULER'
+  | 'IMAG' // the imaginary unit i
   | 'KEYWORD' // command / keyword text, e.g. "For(", "Disp", "and"
   | 'PRGM' // the `prgm` prefix keyword itself
   | 'STO' // -> or the TI store arrow

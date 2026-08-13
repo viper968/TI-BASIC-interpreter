@@ -182,6 +182,15 @@ class Parser {
           return { kind: 'SetDecimalMode', digits: null }
         case 'Fix':
           return this.parseFix()
+        case 'Real':
+          this.advance()
+          return { kind: 'SetComplexMode', mode: 'real' }
+        case 'a+bi':
+          this.advance()
+          return { kind: 'SetComplexMode', mode: 'rect' }
+        case 're^θi':
+          this.advance()
+          return { kind: 'SetComplexMode', mode: 'polar' }
         case 'Fill(':
           return this.parseFill()
         case '1-Var Stats':
@@ -596,7 +605,7 @@ class Parser {
   private canStartImplicitFactor(tok: Token): boolean {
     if (tok.type === 'NUMBER' || tok.type === 'VAR' || tok.type === 'LIST' || tok.type === 'STRVAR') return true
     if (tok.type === 'ANS' || tok.type === 'PI' || tok.type === 'EULER' || tok.type === 'LPAREN') return true
-    if (tok.type === 'MATRIX' || tok.type === 'YVAR') return true
+    if (tok.type === 'MATRIX' || tok.type === 'YVAR' || tok.type === 'IMAG') return true
     if (tok.type === 'KEYWORD' && tok.text.endsWith('(') && !STATEMENT_ONLY_KEYWORDS.has(tok.text)) return true
     return false
   }
@@ -682,6 +691,9 @@ class Parser {
       case 'EULER':
         this.advance()
         return { type: 'Euler' }
+      case 'IMAG':
+        this.advance()
+        return { type: 'Imaginary' }
       case 'VAR':
         this.advance()
         return { type: 'Var', name: tok.text }

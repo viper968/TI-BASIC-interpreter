@@ -207,9 +207,9 @@ describe('vm: errors', () => {
     expect(r.error?.code).toBe('ERR:DATA TYPE')
   })
 
-  it('raises ERR:DOMAIN for √( of a negative number', () => {
+  it('raises ERR:NONREAL ANS for √( of a negative number in the default Real mode', () => {
     const r = run('√(-1)')
-    expect(r.error?.code).toBe('ERR:DOMAIN')
+    expect(r.error?.code).toBe('ERR:NONREAL ANS')
   })
 
   it('attaches the offending line number to runtime errors', () => {
@@ -744,3 +744,150 @@ describe('vm: graphing', () => {
     expect(r.error?.code).toBe('ERR:DOMAIN')
   })
 })
+
+describe('vm: complex numbers', () => {
+  it('computes i² = -1, collapsing back to a plain real number', () => {
+    const r = run('i²')
+    expect(r.error).toBeNull()
+    expect(r.state.ans).toEqual({ kind: 'number', value: -1 })
+    expect(run('Disp i²').screenText.split('\n')[0]).toBe('-1')
+  })
+
+  it('builds and displays a complex number via ordinary arithmetic', () => {
+    const r = run('Disp 3+4i')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('3+4i')
+  })
+
+  it('adds, subtracts, multiplies, and divides complex numbers', () => {
+    expect(run('Disp (1+2i)+(3-i)').screenText.split('\n')[0]).toBe('4+i')
+    expect(run('Disp (1+2i)-(3-i)').screenText.split('\n')[0]).toBe('-2+3i')
+    expect(run('Disp (2+3i)*(4-5i)').screenText.split('\n')[0]).toBe('23+2i')
+    const div = run('Disp (1+0i)/i')
+    expect(div.error).toBeNull()
+    expect(div.screenText.split('\n')[0]).toBe('-i')
+  })
+
+  it('stores a complex number into a variable and reads it back', () => {
+    const r = run('2+3i->Z\nDisp Z')
+    expect(r.error).toBeNull()
+    expect(r.state.complexVars.Z).toEqual({ re: 2, im: 3 })
+    expect(r.screenText.split('\n')[0]).toBe('2+3i')
+  })
+
+  it('clears a variable\'s complex value when a real value is stored over it', () => {
+    const r = run('2+3i->Z\n5->Z\nDisp Z')
+    expect(r.error).toBeNull()
+    expect(r.state.complexVars.Z).toBeUndefined()
+    expect(r.state.vars.Z).toBe(5)
+    expect(r.screenText.split('\n')[0]).toBe('5')
+  })
+
+  it('DelVar clears a complex variable back to 0', () => {
+    const r = run('2+3i->Z\nDelVar Z\nDisp Z')
+    expect(r.error).toBeNull()
+    expect(r.state.complexVars.Z).toBeUndefined()
+    expect(r.screenText.split('\n')[0]).toBe('0')
+  })
+
+  it('computes real(, imag(, conj(, and abs( of a complex number', () => {
+    expect(run('Disp real(3+4i)').screenText.split('\n')[0]).toBe('3')
+    expect(run('Disp imag(3+4i)').screenText.split('\n')[0]).toBe('4')
+    expect(run('Disp conj(3+4i)').screenText.split('\n')[0]).toBe('3-4i')
+    expect(run('Disp abs(3+4i)').screenText.split('\n')[0]).toBe('5')
+  })
+
+  it('real(/imag(/conj( accept a plain real number too', () => {
+    expect(run('Disp real(5)').screenText.split('\n')[0]).toBe('5')
+    expect(run('Disp imag(5)').screenText.split('\n')[0]).toBe('0')
+    expect(run('Disp conj(5)').screenText.split('\n')[0]).toBe('5')
+  })
+
+  it('computes angle( in the current angle mode', () => {
+    expect(run('Disp angle(0+i)').screenText.split('\n')[0]).toBe('90')
+    expect(run('Radian\nDisp round(angle(0+i),4)').screenText.split('\n')[0]).toBe(String(Math.round((Math.PI / 2) * 10000) / 10000))
+  })
+
+  it('round( rounds both parts of a complex number', () => {
+    const r = run('Disp round(1.2345+6.789i,2)')
+    expect(r.screenText.split('\n')[0]).toBe('1.23+6.79i')
+  })
+
+  it('raises ERR:NONREAL ANS for √(/ln(/log( of a negative number in Real mode (the default)', () => {
+    expect(run('√(-4)').error?.code).toBe('ERR:NONREAL ANS')
+    expect(run('ln(-1)').error?.code).toBe('ERR:NONREAL ANS')
+    expect(run('log(-1)').error?.code).toBe('ERR:NONREAL ANS')
+  })
+
+  it('returns a complex result for √(/ln(/log( of a negative number in a+bi mode', () => {
+    const r = run('a+bi\nDisp √(-4)')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('2i')
+    const lnR = run('a+bi\nDisp ln(-1)')
+    expect(lnR.screenText.split('\n')[0]).toBe(formatExpectedRounded(Math.PI) + 'i')
+  })
+
+  it('raises ERR:NONREAL ANS for a negative base with a fractional exponent in Real mode', () => {
+    const r = run('(-8)^(1/3)')
+    expect(r.error?.code).toBe('ERR:NONREAL ANS')
+  })
+
+  it('returns the principal complex root for a negative base with a fractional exponent in a+bi mode', () => {
+    const r = run('a+bi\nDisp round((-8)^(1/3),4)')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('1+1.7321i')
+  })
+
+  it('still computes an ordinary real power normally', () => {
+    expect(run('Disp 2^10').screenText.split('\n')[0]).toBe('1024')
+    expect(run('Disp (-2)^3').screenText.split('\n')[0]).toBe('-8')
+  })
+
+  it('compares complex numbers with = and ≠, but rejects < and >', () => {
+    expect(run('Disp (2+3i)=(2+3i)').screenText.split('\n')[0]).toBe('1')
+    expect(run('Disp (2+3i)≠(2+4i)').screenText.split('\n')[0]).toBe('1')
+    expect(run('(2+3i)<(1+1i)').error?.code).toBe('ERR:DATA TYPE')
+  })
+
+  it('displays a complex number in polar form under re^θi mode', () => {
+    const r = run('re^θi\nDisp 0+4i')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('4e^(90i)')
+  })
+
+  it('runs the COMPLEX sample program end to end', () => {
+    const source = [
+      'ClrHome',
+      'a+bi',
+      '2+3i->Z',
+      'Disp "Z=2+3I"',
+      'Disp Z',
+      'Disp "|Z|="',
+      'Disp round(abs(Z),3)',
+      'Disp "CONJ(Z)="',
+      'Disp conj(Z)',
+      'Disp "ANGLE(Z)="',
+      'Disp round(angle(Z),1)',
+      'Pause',
+      'ClrHome',
+      'Disp "X²+X+1=0"',
+      '1->A',
+      '1->B',
+      '1->C',
+      '(-B+√(B²-4AC))/(2A)->R',
+      '(-B-√(B²-4AC))/(2A)->S',
+      'Disp "ROOTS:"',
+      'Disp R',
+      'Disp S',
+    ].join('\n')
+    const r = run(source, [undefined])
+    expect(r.error).toBeNull()
+    expect(r.state.complexVars.R).toBeDefined()
+    expect(r.state.complexVars.S).toBeDefined()
+  })
+})
+
+/** Matches formatNumber's default precision for an irrational constant, without hardcoding it. */
+function formatExpectedRounded(n: number): string {
+  return String(Number(n.toPrecision(10)))
+}

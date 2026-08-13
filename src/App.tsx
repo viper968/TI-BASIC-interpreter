@@ -112,7 +112,14 @@ export default function App() {
                 onResume={calc.resume}
                 onGotoErrorLine={jumpToLine}
               />
-              <VariableWatch vars={calc.vars} strVars={calc.strVars} lists={calc.lists} matrices={calc.matrices} />
+              <VariableWatch
+                vars={calc.vars}
+                strVars={calc.strVars}
+                lists={calc.lists}
+                matrices={calc.matrices}
+                complexVars={calc.complexVars}
+                complexMode={calc.complexMode}
+              />
             </>
           )}
           {rightTab === 'graph' && <GraphScreen graphScreen={calc.graphScreen} vars={calc.vars} yVars={calc.yVars} />}
@@ -122,8 +129,9 @@ export default function App() {
 
       <footer className="app-footer">
         <p>
-          Scope: TI-84 Plus / TI-84 Plus Silver Edition TI-BASIC only (no complex numbers, stat plots, or a trace cursor yet
-          — see the README roadmap). Angle mode defaults to Degree; switch with the Degree/Radian commands.
+          Scope: TI-84 Plus / TI-84 Plus Silver Edition TI-BASIC only (no stat plots or a trace cursor yet — see the README
+          roadmap). Angle mode defaults to Degree, complex mode defaults to Real; switch with the Degree/Radian and
+          Real/a+bi/re^θi commands.
         </p>
       </footer>
     </div>

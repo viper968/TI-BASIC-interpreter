@@ -183,4 +183,14 @@ describe('lexer', () => {
       expect(tokenize(name).tokens[0]).toMatchObject({ type: 'VAR', text: name })
     }
   })
+
+  it('tokenizes the imaginary unit i as its own constant, distinct from multi-char "i..." keywords', () => {
+    expect(types('i')).toEqual(['IMAG', 'EOF'])
+    expect(types('3+4i')).toEqual(['NUMBER', 'PLUS', 'NUMBER', 'IMAG', 'EOF'])
+    // Greedy longest-match still picks the multi-char keyword over a bare "i".
+    expect(tokenize('int(').tokens[0]).toMatchObject({ type: 'KEYWORD', text: 'int(' })
+    expect(tokenize('identity(').tokens[0]).toMatchObject({ type: 'KEYWORD', text: 'identity(' })
+    expect(tokenize('invNorm(').tokens[0]).toMatchObject({ type: 'KEYWORD', text: 'invNorm(' })
+    expect(tokenize('iPart(').tokens[0]).toMatchObject({ type: 'KEYWORD', text: 'iPart(' })
+  })
 })

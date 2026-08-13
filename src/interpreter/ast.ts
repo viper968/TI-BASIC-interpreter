@@ -18,6 +18,7 @@ export type Expr =
   | { type: 'MatrixElement'; name: string; row: Expr; col: Expr } // [A](1,2)
   | { type: 'MatrixLiteral'; rows: Expr[][] } // [[1,2][3,4]]
   | { type: 'YCall'; name: string; arg: Expr } // Y1(x): evaluate the stored definition at x
+  | { type: 'Imaginary' } // i, the imaginary unit
 
 export type BinaryOp =
   | '+'
@@ -93,6 +94,7 @@ export type Stmt =
   | { kind: 'PxlOn'; row: Expr; col: Expr }
   | { kind: 'PxlOff'; row: Expr; col: Expr }
   | { kind: 'PxlChange'; row: Expr; col: Expr }
+  | { kind: 'SetComplexMode'; mode: 'real' | 'rect' | 'polar' } // Real / a+bi / re^θi
 
 /** One instruction slot in the compiled, flat program. */
 export interface Instruction {

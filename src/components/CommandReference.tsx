@@ -9,6 +9,7 @@ const CATEGORY_LABELS: Record<CommandCategory, string> = {
   matrix: 'Matrices',
   stats: 'Statistics',
   graph: 'Graphing',
+  complex: 'Complex Numbers',
   string: 'Strings',
   math: 'Math',
   logic: 'Logic',

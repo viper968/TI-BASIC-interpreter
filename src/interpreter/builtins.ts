@@ -2,6 +2,7 @@ import { TIError } from './errors'
 import {
   type Value,
   checkFinite,
+  complex,
   list,
   mapNumeric,
   matrix,
@@ -11,9 +12,11 @@ import {
   requireNumber,
   requireString,
   str,
+  toComplex,
 } from './values'
 import * as mat from './matrix'
 import * as stats from './stats'
+import * as cplx from './complex'
 
 export type AngleMode = 'degree' | 'radian'
 
@@ -21,6 +24,13 @@ export interface BuiltinCtx {
   angleMode: AngleMode
   /** Returns the last key pressed and clears it, mirroring getKey on-calc. */
   takeLastKey: () => number
+  /**
+   * Wraps a non-real result as a Value, per the calculator's complex mode:
+   * Real mode raises ERR:NONREAL ANS instead of returning it. Used by
+   * functions whose real-domain input can produce a non-real result, e.g.
+   * √( of a negative number.
+   */
+  maybeComplex: (re: number, im: number) => Value
 }
 
 export type Builtin = (args: Value[], ctx: BuiltinCtx) => Value
@@ -63,23 +73,66 @@ export const BUILTINS: Record<string, Builtin> = {
   'sin⁻¹(': invTrig(Math.asin),
   'cos⁻¹(': invTrig(Math.acos),
   'tan⁻¹(': invTrig(Math.atan),
-  'ln(': (args) => mapNumeric(args[0], (x) => {
-    if (x <= 0) throw new TIError('ERR:DOMAIN', 'ln( requires a positive number')
-    return Math.log(x)
-  }),
-  'log(': (args) => mapNumeric(args[0], (x) => {
-    if (x <= 0) throw new TIError('ERR:DOMAIN', 'log( requires a positive number')
-    return Math.log10(x)
-  }),
-  '√(': (args) => mapNumeric(args[0], (x) => {
-    if (x < 0) throw new TIError('ERR:DOMAIN', '√( requires a non-negative number (complex numbers are not supported)')
-    return Math.sqrt(x)
-  }),
-  'abs(': (args) => mapNumeric(args[0], Math.abs),
+  // ln(/log(/√( of a negative real number have no real result; a list stays
+  // real-only (see README), but a bare number is handed to ctx.maybeComplex,
+  // which returns the complex result or raises ERR:NONREAL ANS depending on
+  // the calculator's complex mode.
+  'ln(': (args, ctx) => {
+    if (args[0].kind === 'list') {
+      return list(args[0].value.map((x) => {
+        if (x <= 0) throw new TIError('ERR:NONREAL ANS', 'ln( of a non-positive number in a list is not supported')
+        return Math.log(x)
+      }))
+    }
+    const x = requireNumber(args[0], 'a number')
+    if (x > 0) return num(Math.log(x))
+    if (x === 0) throw new TIError('ERR:DOMAIN', 'ln( requires a nonzero number')
+    return ctx.maybeComplex(Math.log(-x), Math.PI)
+  },
+  'log(': (args, ctx) => {
+    if (args[0].kind === 'list') {
+      return list(args[0].value.map((x) => {
+        if (x <= 0) throw new TIError('ERR:NONREAL ANS', 'log( of a non-positive number in a list is not supported')
+        return Math.log10(x)
+      }))
+    }
+    const x = requireNumber(args[0], 'a number')
+    if (x > 0) return num(Math.log10(x))
+    if (x === 0) throw new TIError('ERR:DOMAIN', 'log( requires a nonzero number')
+    return ctx.maybeComplex(Math.log10(-x), Math.PI / Math.LN10)
+  },
+  '√(': (args, ctx) => {
+    if (args[0].kind === 'list') {
+      return list(args[0].value.map((x) => {
+        if (x < 0) throw new TIError('ERR:NONREAL ANS', '√( of a negative number in a list is not supported')
+        return Math.sqrt(x)
+      }))
+    }
+    const x = requireNumber(args[0], 'a number')
+    if (x >= 0) return num(Math.sqrt(x))
+    return ctx.maybeComplex(0, Math.sqrt(-x))
+  },
+  'abs(': (args) => {
+    if (args[0].kind === 'complex') return num(cplx.abs(args[0]))
+    return mapNumeric(args[0], Math.abs)
+  },
   'round(': (args) => {
     const digitsRaw = args.length > 1 ? requireNumber(args[1], 'a digit count') : 9
     const digits = Math.max(0, Math.min(9, Math.round(digitsRaw)))
-    return mapNumeric(args[0], (x) => Number(x.toFixed(digits)))
+    const roundOne = (x: number) => Number(x.toFixed(digits))
+    if (args[0].kind === 'complex') return complex(roundOne(args[0].re), roundOne(args[0].im))
+    return mapNumeric(args[0], roundOne)
+  },
+  'real(': (args) => num(toComplex(args[0], 'a number or complex number').re),
+  'imag(': (args) => num(toComplex(args[0], 'a number or complex number').im),
+  'conj(': (args) => {
+    const c = toComplex(args[0], 'a number or complex number')
+    return c.im === 0 ? num(c.re) : complex(c.re, -c.im)
+  },
+  'angle(': (args, ctx) => {
+    const c = toComplex(args[0], 'a number or complex number')
+    const rad = cplx.angle(c)
+    return num(ctx.angleMode === 'degree' ? (rad * 180) / Math.PI : rad)
   },
   'int(': (args) => mapNumeric(args[0], Math.floor),
   'iPart(': (args) => mapNumeric(args[0], Math.trunc),

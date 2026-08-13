@@ -1,5 +1,6 @@
 import { TIError } from './errors'
 import { formatMatrix, type MatrixData } from './matrix'
+import type { Complex } from './complex'
 
 /** Runtime value types the interpreter operates on. */
 export type Value =
@@ -7,11 +8,13 @@ export type Value =
   | { kind: 'string'; value: string }
   | { kind: 'list'; value: number[] }
   | { kind: 'matrix'; value: MatrixData }
+  | { kind: 'complex'; re: number; im: number }
 
 export const num = (value: number): Value => ({ kind: 'number', value })
 export const str = (value: string): Value => ({ kind: 'string', value })
 export const list = (value: number[]): Value => ({ kind: 'list', value })
 export const matrix = (value: MatrixData): Value => ({ kind: 'matrix', value })
+export const complex = (re: number, im: number): Value => ({ kind: 'complex', re, im })
 
 /** TI-BASIC truthiness: any nonzero number is true; a 1-element list uses that element. */
 export function isTruthy(v: Value): boolean {
@@ -25,6 +28,10 @@ export interface NumberFormatOptions {
   /** null/undefined = Float (automatic precision). 0-9 = Fix n (always that many decimal places). */
   fixedDecimals?: number | null
   notation?: 'normal' | 'sci' | 'eng'
+  /** How a complex Value is rendered: rectangular a+bi (default) or polar r*e^(θi). */
+  complexMode?: 'real' | 'rect' | 'polar'
+  /** Unit for the θ in polar complex display, matching the calculator's angle mode. */
+  angleMode?: 'degree' | 'radian'
 }
 
 function trimTrailingZeros(mantissa: string): string {
@@ -92,10 +99,33 @@ export function formatList(values: number[], opts: NumberFormatOptions = {}): st
   return `{${values.map((v) => formatNumber(v, opts)).join(' ')}}`
 }
 
+/** Rectangular a+bi display: drops a zero real part, and a "1" coefficient on i. */
+function formatComplexRect(re: number, im: number, opts: NumberFormatOptions): string {
+  if (im === 0) return formatNumber(re, opts)
+  const reStr = re === 0 ? '' : formatNumber(re, opts)
+  const sign = im < 0 ? '-' : reStr ? '+' : ''
+  const absIm = Math.abs(im)
+  const imStr = absIm === 1 ? 'i' : `${formatNumber(absIm, opts)}i`
+  return `${reStr}${sign}${imStr}`
+}
+
+/** Polar r*e^(θi) display, with θ in the given angle mode. */
+function formatComplexPolar(re: number, im: number, opts: NumberFormatOptions): string {
+  const r = Math.hypot(re, im)
+  const thetaRad = Math.atan2(im, re)
+  const theta = opts.angleMode === 'degree' ? (thetaRad * 180) / Math.PI : thetaRad
+  return `${formatNumber(r, opts)}e^(${formatNumber(theta, opts)}i)`
+}
+
+export function formatComplex(re: number, im: number, opts: NumberFormatOptions = {}): string {
+  return opts.complexMode === 'polar' ? formatComplexPolar(re, im, opts) : formatComplexRect(re, im, opts)
+}
+
 export function formatValue(v: Value, opts: NumberFormatOptions = {}): string {
   if (v.kind === 'number') return formatNumber(v.value, opts)
   if (v.kind === 'string') return v.value
   if (v.kind === 'matrix') return formatMatrix(v.value, (n) => formatNumber(n, opts))
+  if (v.kind === 'complex') return formatComplex(v.re, v.im, opts)
   return formatList(v.value, opts)
 }
 
@@ -195,4 +225,18 @@ export function requireMatrix(v: Value, what = 'a matrix'): MatrixData {
 export function checkFinite(n: number): number {
   if (Number.isNaN(n) || !Number.isFinite(n)) throw new TIError('ERR:DOMAIN', 'Result is undefined for that input')
   return n
+}
+
+/** Throws ERR:DOMAIN if a complex math operation produced a non-finite result. */
+export function checkFiniteComplex(c: Complex): Complex {
+  checkFinite(c.re)
+  checkFinite(c.im)
+  return c
+}
+
+/** A real number degenerates to {re,im:0}; a complex value passes through as-is. */
+export function toComplex(v: Value, what = 'a number'): Complex {
+  if (v.kind === 'number') return { re: v.value, im: 0 }
+  if (v.kind === 'complex') return { re: v.re, im: v.im }
+  throw new TIError('ERR:DATA TYPE', `Expected ${what}`)
 }

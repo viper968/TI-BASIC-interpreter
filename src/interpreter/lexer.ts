@@ -23,6 +23,7 @@ const EXCLUDED_FROM_KEYWORD_TABLE = new Set([
   '1-Var Stats', // starts with a digit, matched explicitly before number lexing
   '2-Var Stats', // ditto
   'Y1', // doc-only entry representing the whole Y0-Y9 family; matched explicitly below
+  'i', // the imaginary unit, has its own IMAG token type, added directly above
 ])
 
 function buildKeywordTable(): KeywordEntry[] {
@@ -32,6 +33,7 @@ function buildKeywordTable(): KeywordEntry[] {
     { match: 'Ans', type: 'ANS', text: 'Ans' },
     { match: 'prgm', type: 'PRGM', text: 'prgm' },
     { match: 'e', type: 'EULER', text: 'e' },
+    { match: 'i', type: 'IMAG', text: 'i' },
   ]
   for (const cmd of COMMANDS) {
     // Statistics/regression results and graph window variables (n, a, b, r,

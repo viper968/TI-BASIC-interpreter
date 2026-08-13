@@ -8,6 +8,8 @@ import {
   type Value,
   broadcastNumeric,
   checkFinite,
+  checkFiniteComplex,
+  complex,
   formatAsFraction,
   formatValue,
   isTruthy,
@@ -20,9 +22,12 @@ import {
   requireNumber,
   requireString,
   str,
+  toComplex,
 } from './values'
 import * as mat from './matrix'
 import * as stats from './stats'
+import * as cplx from './complex'
+import type { Complex } from './complex'
 import { BUILTINS, type AngleMode, type BuiltinCtx, factorial } from './builtins'
 import { SCREEN_COLS, SCREEN_ROWS, type Screen, clearScreen, createScreen, dispLine, writeAt } from './screen'
 import { RESERVED_VAR_NAMES } from './commands'
@@ -83,6 +88,15 @@ export interface InterpreterState {
   notation: 'normal' | 'sci' | 'eng'
   /** MODE screen: null = Float (automatic), 0-9 = Fix n. */
   fixedDecimals: number | null
+  /** MODE screen: Real/a+bi/re^θi. Real (this interpreter's default) blocks operations that would produce a non-real result from real inputs, e.g. √(-1). */
+  complexMode: 'real' | 'rect' | 'polar'
+  /**
+   * A-Z/θ hold a plain number in `vars`; a variable currently holding a
+   * *complex* value additionally gets an entry here (with `vars[name]` kept
+   * in sync to its real part, for any code path that reads `vars` directly).
+   * Sparse by design: most variables never hold a complex value.
+   */
+  complexVars: Record<string, Complex>
   screen: Screen
   lastKey: number
 }
@@ -118,6 +132,8 @@ export function createInterpreterState(): InterpreterState {
     angleMode: 'degree',
     notation: 'normal',
     fixedDecimals: null,
+    complexMode: 'real',
+    complexVars: {},
     screen: createScreen(),
     lastKey: 0,
   }
@@ -185,11 +201,51 @@ class Runner {
         this.state.lastKey = 0
         return k
       },
+      maybeComplex: (re, im) => this.maybeComplexResult({ re, im }),
     }
   }
 
   private numberFormatOpts(): NumberFormatOptions {
-    return { fixedDecimals: this.state.fixedDecimals, notation: this.state.notation }
+    return {
+      fixedDecimals: this.state.fixedDecimals,
+      notation: this.state.notation,
+      complexMode: this.state.complexMode,
+      angleMode: this.state.angleMode,
+    }
+  }
+
+  /** Sets a real variable directly (loop counters, X during graphing, ...), clearing any stale complex value. */
+  private setRealVar(name: string, value: number): void {
+    this.state.vars[name] = value
+    delete this.state.complexVars[name]
+  }
+
+  /**
+   * Wraps a Complex as a Value, collapsing to a plain number when the
+   * imaginary part is exactly 0. Used whenever an operand was already
+   * complex (arithmetic between complex numbers, functions of a complex
+   * argument, ...), so there's no real-to-complex domain crossing to gate.
+   */
+  private complexResult(c: Complex): Value {
+    checkFiniteComplex(c)
+    if (c.im === 0) return num(c.re)
+    return complex(c.re, c.im)
+  }
+
+  /**
+   * Like `complexResult`, but for a result computed from purely real inputs
+   * that turned out non-real (e.g. √(-4), or a negative base to a
+   * fractional power). Gated by the calculator's complex mode, matching
+   * real hardware: Real mode (the default) raises ERR:NONREAL ANS instead
+   * of silently returning a complex number.
+   */
+  private maybeComplexResult(c: Complex): Value {
+    checkFiniteComplex(c)
+    if (c.im === 0) return num(c.re)
+    if (this.state.complexMode === 'real') {
+      throw new TIError('ERR:NONREAL ANS', 'Result is a complex number; switch out of Real mode (a+bi or re^θi) to allow this')
+    }
+    return complex(c.re, c.im)
   }
 
   private dispValue(v: Value) {
@@ -218,8 +274,11 @@ class Runner {
         return num(expr.value)
       case 'String':
         return str(expr.value)
-      case 'Var':
+      case 'Var': {
+        const c = this.state.complexVars[expr.name]
+        if (c) return complex(c.re, c.im)
         return num(this.state.vars[expr.name] ?? 0)
+      }
       case 'List':
         return list([...(this.state.lists[expr.name] ?? [])])
       case 'ListElement': {
@@ -238,8 +297,11 @@ class Runner {
         return num(Math.PI)
       case 'Euler':
         return num(Math.E)
-      case 'Unary':
-        return mapNumeric(this.evalExpr(expr.operand), (x) => -x)
+      case 'Unary': {
+        const v = this.evalExpr(expr.operand)
+        if (v.kind === 'complex') return complex(-v.re, -v.im)
+        return mapNumeric(v, (x) => -x)
+      }
       case 'Binary': {
         const l = this.evalExpr(expr.left)
         const r = this.evalExpr(expr.right)
@@ -270,9 +332,11 @@ class Runner {
         if (!def) throw new TIError('ERR:UNDEFINED', `${expr.name} is not defined`)
         const x = requireNumber(this.evalExpr(expr.arg), 'a number')
         // Real hardware permanently sets X when a Y-variable is evaluated; we match that quirk.
-        this.state.vars['X'] = x
+        this.setRealVar('X', x)
         return this.evalExpr(this.parseYVarDef(expr.name, def))
       }
+      case 'Imaginary':
+        return complex(0, 1)
     }
   }
 
@@ -298,6 +362,8 @@ class Runner {
 
   private evalBinary(op: BinaryOp, l: Value, r: Value): Value {
     if (l.kind === 'matrix' || r.kind === 'matrix') return this.evalMatrixBinary(op, l, r)
+    if (op === '^') return this.evalPower(l, r)
+    if (l.kind === 'complex' || r.kind === 'complex') return this.evalComplexBinary(op, l, r)
     switch (op) {
       case '+':
         if (l.kind === 'string' || r.kind === 'string') {
@@ -313,8 +379,6 @@ class Runner {
           if (b === 0) throw new TIError('ERR:DIVIDE BY 0', 'Cannot divide by 0')
           return checkFinite(a / b)
         })
-      case '^':
-        return broadcastNumeric(l, r, (a, b) => checkFinite(Math.pow(a, b)))
       case '=':
       case '≠': {
         if (l.kind === 'string' && r.kind === 'string') {
@@ -346,6 +410,52 @@ class Runner {
       }
       default:
         throw new TIError('ERR:SYNTAX', `Unsupported operator ${op}`)
+    }
+  }
+
+  /**
+   * ^ for two non-matrix operands. A single formula (a^b = e^(b·ln(a)),
+   * via complex.ts) covers every case that can go non-real — a negative
+   * real base with a fractional exponent, a complex base, a complex
+   * exponent — so there's only one code path to gate on complex mode,
+   * rather than one per case.
+   */
+  private evalPower(l: Value, r: Value): Value {
+    if (l.kind === 'list' || r.kind === 'list') {
+      return broadcastNumeric(l, r, (a, b) => checkFinite(Math.pow(a, b)))
+    }
+    if (l.kind === 'complex' || r.kind === 'complex') {
+      const lc = toComplex(l, 'a number or complex number')
+      const rc = toComplex(r, 'a number or complex number')
+      return this.complexResult(cplx.pow(lc, rc))
+    }
+    const b = requireNumber(l, 'a number')
+    const e = requireNumber(r, 'a number')
+    if (b >= 0 || Number.isInteger(e)) return num(checkFinite(Math.pow(b, e)))
+    // A negative base with a non-integer exponent has no real result.
+    return this.maybeComplexResult(cplx.pow({ re: b, im: 0 }, { re: e, im: 0 }))
+  }
+
+  /** +, -, *, /, =, ≠ when at least one operand is complex (arithmetic on an already-complex value is always allowed, regardless of complex mode). */
+  private evalComplexBinary(op: BinaryOp, l: Value, r: Value): Value {
+    const lc = toComplex(l, 'a number or complex number')
+    const rc = toComplex(r, 'a number or complex number')
+    switch (op) {
+      case '+':
+        return this.complexResult(cplx.add(lc, rc))
+      case '-':
+        return this.complexResult(cplx.sub(lc, rc))
+      case '*':
+        return this.complexResult(cplx.mul(lc, rc))
+      case '/':
+        return this.complexResult(cplx.div(lc, rc))
+      case '=':
+      case '≠': {
+        const eq = lc.re === rc.re && lc.im === rc.im
+        return num((op === '=' ? eq : !eq) ? 1 : 0)
+      }
+      default:
+        throw new TIError('ERR:DATA TYPE', `"${op}" is not supported for complex numbers`)
     }
   }
 
@@ -392,6 +502,11 @@ class Runner {
       if (op === '⁻¹') return matrix(mat.inverse(v.value))
       throw new TIError('ERR:DATA TYPE', `"${op}" is not supported for matrices`)
     }
+    if (v.kind === 'complex') {
+      if (op === '²') return this.complexResult(cplx.mul(v, v))
+      if (op === '⁻¹') return this.complexResult(cplx.div({ re: 1, im: 0 }, v))
+      throw new TIError('ERR:DATA TYPE', `"${op}" is not supported for complex numbers`)
+    }
     if (op === '²') return mapNumeric(v, (x) => checkFinite(x * x))
     if (op === '⁻¹') {
       return mapNumeric(v, (x) => {
@@ -435,7 +550,7 @@ class Runner {
     if (step === 0) throw new TIError('ERR:DOMAIN', 'seq( step cannot be 0')
     const results: number[] = []
     for (let i = start; step > 0 ? i <= end : i >= end; i += step) {
-      this.state.vars[varArg.name] = i
+      this.setRealVar(varArg.name, i)
       results.push(requireNumber(this.evalExpr(exprArg), 'a numeric sequence value'))
     }
     return list(results)
@@ -444,7 +559,13 @@ class Runner {
   private assignTo(target: StoreTarget, value: Value): void {
     switch (target.type) {
       case 'Var':
-        this.state.vars[target.name] = requireNumber(value, 'a number')
+        if (value.kind === 'complex') {
+          this.state.complexVars[target.name] = { re: value.re, im: value.im }
+          this.state.vars[target.name] = value.re // kept in sync for any code path reading vars directly
+        } else {
+          delete this.state.complexVars[target.name]
+          this.state.vars[target.name] = requireNumber(value, 'a number')
+        }
         return
       case 'StrVar':
         this.state.strVars[target.name] = requireString(value, 'a string')
@@ -628,7 +749,7 @@ class Runner {
         if (l.partnerKind === 'for') {
           const loop = frame.loopState.get(l.partnerIndex)
           if (!loop) return { kind: 'next' }
-          this.state.vars[loop.varName] = this.state.vars[loop.varName] + loop.step
+          this.setRealVar(loop.varName, this.state.vars[loop.varName] + loop.step)
           const cur = this.state.vars[loop.varName]
           const cont = loop.step >= 0 ? cur <= loop.end : cur >= loop.end
           if (cont) return { kind: 'jump', index: l.partnerIndex + 1 }
@@ -645,7 +766,7 @@ class Runner {
         const startV = requireNumber(this.evalExpr(stmt.start), 'a start value')
         const endV = requireNumber(this.evalExpr(stmt.end), 'an end value')
         const stepV = stmt.step ? requireNumber(this.evalExpr(stmt.step), 'a step value') : 1
-        this.state.vars[stmt.varName] = startV
+        this.setRealVar(stmt.varName, startV)
         const cont = stepV >= 0 ? startV <= endV : startV >= endV
         const l = linkInfo?.kind === 'for' ? linkInfo : undefined
         if (!cont) return { kind: 'jump', index: l ? l.endIndex + 1 : index + 1 }
@@ -667,13 +788,13 @@ class Runner {
         return { kind: 'jump', index: target }
       }
       case 'IsGt': {
-        this.state.vars[stmt.varName] = (this.state.vars[stmt.varName] ?? 0) + 1
+        this.setRealVar(stmt.varName, (this.state.vars[stmt.varName] ?? 0) + 1)
         const cmp = requireNumber(this.evalExpr(stmt.value), 'a comparison value')
         if (this.state.vars[stmt.varName] > cmp) return { kind: 'jump', index: index + 2 }
         return { kind: 'next' }
       }
       case 'DsLt': {
-        this.state.vars[stmt.varName] = (this.state.vars[stmt.varName] ?? 0) - 1
+        this.setRealVar(stmt.varName, (this.state.vars[stmt.varName] ?? 0) - 1)
         const cmp = requireNumber(this.evalExpr(stmt.value), 'a comparison value')
         if (this.state.vars[stmt.varName] < cmp) return { kind: 'jump', index: index + 2 }
         return { kind: 'next' }
@@ -741,7 +862,7 @@ class Runner {
       }
       case 'DelVar': {
         const t = stmt.target
-        if (t.type === 'Var') this.state.vars[t.name] = 0
+        if (t.type === 'Var') this.setRealVar(t.name, 0)
         else if (t.type === 'StrVar') this.state.strVars[t.name] = ''
         else if (t.type === 'List') this.state.lists[t.name] = []
         else if (t.type === 'Matrix') this.state.matrices[t.name] = []
@@ -817,6 +938,9 @@ class Runner {
       case 'SetNotation':
         this.state.notation = stmt.mode
         return { kind: 'next' }
+      case 'SetComplexMode':
+        this.state.complexMode = stmt.mode
+        return { kind: 'next' }
       case 'DispGraph': {
         const g = this.state.graphScreen
         clearGraphScreen(g)
@@ -842,7 +966,7 @@ class Runner {
           let prevCol: number | null = null
           for (let col = 0; col < GRAPH_COLS; col++) {
             const x = colToX(col, w)
-            this.state.vars['X'] = x
+            this.setRealVar('X', x)
             let y: number
             try {
               y = requireNumber(this.evalExpr(parsedExpr), 'a number')

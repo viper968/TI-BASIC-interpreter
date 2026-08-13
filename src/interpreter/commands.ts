@@ -10,8 +10,8 @@
  *
  * Scope: TI-84 Plus / TI-84 Plus Silver Edition TI-BASIC (MathPrint off,
  * classic OS, monochrome). Notably NOT included (see README "Roadmap"):
- * complex numbers, stat plots, a trace cursor, Shade(, apps, user-created
- * list names, and CATALOG-only rarely used commands.
+ * stat plots, a trace cursor, Shade(, apps, user-created list names, and
+ * CATALOG-only rarely used commands.
  */
 
 export type CommandCategory =
@@ -22,6 +22,7 @@ export type CommandCategory =
   | 'matrix'
   | 'stats'
   | 'graph'
+  | 'complex'
   | 'string'
   | 'math'
   | 'logic'
@@ -144,6 +145,16 @@ export const COMMANDS: CommandSpec[] = [
   { name: 'Pxl-Off(', category: 'graph', kind: 'statement', syntax: 'Pxl-Off(row,col)', description: 'Turns off one pixel (row 0-62, col 0-94) on the graph screen.' },
   { name: 'Pxl-Change(', category: 'graph', kind: 'statement', syntax: 'Pxl-Change(row,col)', description: 'Toggles one pixel (row 0-62, col 0-94) on the graph screen.' },
   { name: 'pxl-Test(', category: 'graph', kind: 'function', syntax: 'pxl-Test(row,col)', description: 'Returns 1 if the given pixel is on, else 0.' },
+
+  // ---- Complex numbers ---------------------------------------------------------------
+  { name: 'i', category: 'complex', kind: 'constant', syntax: 'i', description: 'The imaginary unit, i²=-1. Build a complex number with ordinary arithmetic, e.g. 3+4i.' },
+  { name: 'real(', category: 'complex', kind: 'function', syntax: 'real(value)', description: 'The real part of a complex number (a real number passes through unchanged).' },
+  { name: 'imag(', category: 'complex', kind: 'function', syntax: 'imag(value)', description: 'The imaginary part of a complex number (0 for a real number).' },
+  { name: 'conj(', category: 'complex', kind: 'function', syntax: 'conj(value)', description: 'The complex conjugate: conj(a+bi) = a-bi.' },
+  { name: 'angle(', category: 'complex', kind: 'function', syntax: 'angle(value)', description: 'The polar angle (argument) of a complex number, in the current angle mode. 0 for a positive real, 180°/π for a negative real.' },
+  { name: 'Real', category: 'complex', kind: 'statement', syntax: 'Real', description: 'Sets complex mode to Real (this interpreter’s default): an operation that would produce a non-real result, e.g. √(-1), raises ERR:NONREAL ANS instead of returning a complex number. Complex numbers you build explicitly with i still work and display fine.' },
+  { name: 'a+bi', category: 'complex', kind: 'statement', syntax: 'a+bi', description: 'Sets complex mode to a+bi: non-real results are returned as complex numbers instead of erroring, and displayed in rectangular a+bi form.' },
+  { name: 're^θi', aliases: ['re^thetai'], category: 'complex', kind: 'statement', syntax: 're^θi', description: 'Sets complex mode to re^θi: non-real results are returned as complex numbers, displayed in polar r*e^(θi) form.' },
 
   // ---- Strings ---------------------------------------------------------------
   { name: 'length(', category: 'string', kind: 'function', syntax: 'length(string)', description: 'Returns the number of characters in a string.' },

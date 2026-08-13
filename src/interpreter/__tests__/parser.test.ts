@@ -427,4 +427,44 @@ describe('parser: statements', () => {
     expect(diagnostics).toHaveLength(0)
     expect(program.instructions[0].stmt).toMatchObject({ kind: 'Store', target: { type: 'Var', name: 'Xmin' } })
   })
+
+  it('parses Real, a+bi, and re^θi as complex-mode statements', () => {
+    expect(parse('Real').program.instructions[0].stmt).toEqual({ kind: 'SetComplexMode', mode: 'real' })
+    expect(parse('a+bi').program.instructions[0].stmt).toEqual({ kind: 'SetComplexMode', mode: 'rect' })
+    expect(parse('re^θi').program.instructions[0].stmt).toEqual({ kind: 'SetComplexMode', mode: 'polar' })
+    expect(parse('re^thetai').program.instructions[0].stmt).toEqual({ kind: 'SetComplexMode', mode: 'polar' })
+  })
+})
+
+describe('parser: complex numbers', () => {
+  it('parses the imaginary unit i as its own expression node', () => {
+    const { program, diagnostics } = parse('i')
+    expect(diagnostics).toHaveLength(0)
+    expect(program.instructions[0].stmt).toEqual({ kind: 'Expr', expr: { type: 'Imaginary' } })
+  })
+
+  it('parses 3+4i as 3 + (4*i), via implicit multiplication', () => {
+    const { program, diagnostics } = parse('3+4i')
+    expect(diagnostics).toHaveLength(0)
+    const stmt = program.instructions[0].stmt
+    if (stmt.kind !== 'Expr') throw new Error('expected Expr')
+    expect(stmt.expr).toEqual({
+      type: 'Binary',
+      op: '+',
+      left: { type: 'Number', value: 3 },
+      right: { type: 'Binary', op: '*', left: { type: 'Number', value: 4 }, right: { type: 'Imaginary' } },
+    })
+  })
+
+  it('parses i as able to start an implicit-multiplication factor, e.g. 2i', () => {
+    const { program } = parse('2i')
+    const stmt = program.instructions[0].stmt
+    if (stmt.kind !== 'Expr') throw new Error('expected Expr')
+    expect(stmt.expr).toEqual({
+      type: 'Binary',
+      op: '*',
+      left: { type: 'Number', value: 2 },
+      right: { type: 'Imaginary' },
+    })
+  })
 })
