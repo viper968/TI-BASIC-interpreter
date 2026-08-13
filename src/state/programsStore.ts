@@ -61,6 +61,21 @@ const SAMPLE_PROGRAMS: Omit<StoredProgram, 'id' | 'updatedAt'>[] = [
       'End',
     ].join('\n'),
   },
+  {
+    name: 'MATRIX',
+    source: [
+      'ClrHome',
+      'Disp "SOLVE:"',
+      'Disp "2X+Y=5"',
+      'Disp "X-Y=1"',
+      '[[2,1,5][1,-1,1]]->[A]',
+      'rref([A])->[B]',
+      'Disp "X="',
+      'Disp [B](1,3)',
+      'Disp "Y="',
+      'Disp [B](2,3)',
+    ].join('\n'),
+  },
 ]
 
 function loadPrograms(): StoredProgram[] {

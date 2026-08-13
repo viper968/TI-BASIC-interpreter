@@ -10,7 +10,7 @@
  *
  * Scope: TI-84 Plus / TI-84 Plus Silver Edition TI-BASIC (MathPrint off,
  * classic OS, monochrome). Notably NOT included (see README "Roadmap"):
- * matrices, complex numbers, stat lists/plots, graphing commands, apps,
+ * complex numbers, statistics, stat lists/plots, graphing commands, apps,
  * user-created list names, and CATALOG-only rarely used commands.
  */
 
@@ -19,6 +19,7 @@ export type CommandCategory =
   | 'io'
   | 'variable'
   | 'list'
+  | 'matrix'
   | 'string'
   | 'math'
   | 'logic'
@@ -71,10 +72,24 @@ export const COMMANDS: CommandSpec[] = [
   { name: 'Ans', category: 'variable', kind: 'constant', syntax: 'Ans', description: 'The value of the last evaluated expression.' },
 
   // ---- Lists ---------------------------------------------------------------
-  { name: 'dim(', category: 'list', kind: 'function', syntax: 'dim(list)', description: 'Returns the number of elements in a list.' },
+  { name: 'dim(', category: 'list', kind: 'function', syntax: 'dim(list) or dim(matrix)', description: 'Returns the number of elements in a list, or {rows,cols} for a matrix. Also usable as a store target — {n}->dim(L1) resizes L1, and {r,c}->dim([A]) resizes [A] (zero-filling new slots).' },
   { name: 'seq(', category: 'list', kind: 'function', syntax: 'seq(expr,var,start,end[,step])', description: 'Builds a list by evaluating expr for var stepping from start to end.' },
   { name: 'sum(', category: 'list', kind: 'function', syntax: 'sum(list)', description: 'Returns the sum of all elements in a list.' },
-  { name: 'augment(', category: 'list', kind: 'function', syntax: 'augment(list1,list2)', description: 'Returns a new list with list2 appended after list1.' },
+  { name: 'augment(', category: 'list', kind: 'function', syntax: 'augment(list1,list2) or augment(matrixA,matrixB)', description: 'Concatenates two lists, or two matrices with the same row count (side by side).' },
+  { name: 'Fill(', category: 'list', kind: 'statement', syntax: 'Fill(value,list) or Fill(value,matrix)', description: 'Overwrites every element of an already-sized list or matrix with value.' },
+
+  // ---- Matrices ---------------------------------------------------------------
+  { name: '[A]', category: 'matrix', kind: 'constant', syntax: '[A] … [J]', description: 'The 10 matrix variables. Store a whole matrix, an element [A](row,col), or build one with a [[1,2][3,4]] literal (rows adjacent, no commas between them).' },
+  { name: 'det(', category: 'matrix', kind: 'function', syntax: 'det(matrix)', description: 'Determinant of a square matrix.' },
+  { name: 'Transpose(', category: 'matrix', kind: 'function', syntax: 'Transpose(matrix)', description: 'Swaps rows and columns.' },
+  { name: 'identity(', category: 'matrix', kind: 'function', syntax: 'identity(n)', description: 'Returns the n×n identity matrix.' },
+  { name: 'randM(', category: 'matrix', kind: 'function', syntax: 'randM(rows,cols)', description: 'Returns a matrix of random single-digit integers.' },
+  { name: 'ref(', category: 'matrix', kind: 'function', syntax: 'ref(matrix)', description: 'Row echelon form (via Gaussian elimination).' },
+  { name: 'rref(', category: 'matrix', kind: 'function', syntax: 'rref(matrix)', description: 'Reduced row echelon form (via Gauss-Jordan elimination) — the usual way to solve a system of equations.' },
+  { name: 'rowSwap(', category: 'matrix', kind: 'function', syntax: 'rowSwap(matrix,rowA,rowB)', description: 'Returns a copy of matrix with two rows swapped.' },
+  { name: 'row+(', category: 'matrix', kind: 'function', syntax: 'row+(matrix,rowA,rowB)', description: 'Returns a copy of matrix with rowA added into rowB.' },
+  { name: '*row(', category: 'matrix', kind: 'function', syntax: '*row(value,matrix,row)', description: 'Returns a copy of matrix with row scaled by value.' },
+  { name: '*row+(', category: 'matrix', kind: 'function', syntax: '*row+(value,matrix,rowA,rowB)', description: 'Returns a copy of matrix with value*rowA added into rowB.' },
 
   // ---- Strings ---------------------------------------------------------------
   { name: 'length(', category: 'string', kind: 'function', syntax: 'length(string)', description: 'Returns the number of characters in a string.' },

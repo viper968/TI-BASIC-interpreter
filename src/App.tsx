@@ -108,7 +108,7 @@ export default function App() {
                 onResume={calc.resume}
                 onGotoErrorLine={jumpToLine}
               />
-              <VariableWatch vars={calc.vars} strVars={calc.strVars} lists={calc.lists} />
+              <VariableWatch vars={calc.vars} strVars={calc.strVars} lists={calc.lists} matrices={calc.matrices} />
             </>
           ) : (
             <CommandReference onInsert={(text) => editorRef.current?.insertAtCursor(text)} />
@@ -118,8 +118,8 @@ export default function App() {
 
       <footer className="app-footer">
         <p>
-          Scope: TI-84 Plus / TI-84 Plus Silver Edition TI-BASIC only (no matrices, complex numbers, stat plots, or graphing
-          commands yet). Angle mode defaults to Degree; switch with the Degree/Radian commands.
+          Scope: TI-84 Plus / TI-84 Plus Silver Edition TI-BASIC only (no complex numbers, statistics, stat plots, or graphing
+          commands yet — see the README roadmap). Angle mode defaults to Degree; switch with the Degree/Radian commands.
         </p>
       </footer>
     </div>

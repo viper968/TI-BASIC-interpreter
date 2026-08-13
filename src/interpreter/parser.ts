@@ -16,7 +16,7 @@ const COMPARE_OPS: Partial<Record<TokenType, BinaryOp>> = {
 }
 
 /** Function-style keywords that are statement-only and illegal inside an expression. */
-const STATEMENT_ONLY_KEYWORDS = new Set(['For(', 'Output(', 'Menu(', 'IS>(', 'DS<('])
+const STATEMENT_ONLY_KEYWORDS = new Set(['For(', 'Output(', 'Menu(', 'IS>(', 'DS<(', 'Fill('])
 
 /** Tokens that legitimately end a statement. */
 function isStmtEnd(tok: Token): boolean {
@@ -167,6 +167,8 @@ class Parser {
           return { kind: 'SetDecimalMode', digits: null }
         case 'Fix':
           return this.parseFix()
+        case 'Fill(':
+          return this.parseFill()
         default:
           break
       }
@@ -318,6 +320,15 @@ class Parser {
     return { kind: 'Output', row, col, value }
   }
 
+  private parseFill(): Stmt {
+    this.advance() // Fill(
+    const value = this.parseExpr()
+    this.expect('COMMA', '","')
+    const target = this.parseListOrMatrixName()
+    this.expect('RPAREN', '")"')
+    return { kind: 'Fill', value, target }
+  }
+
   private parseInput(): Stmt {
     this.advance() // Input
     if (isStmtEnd(this.current())) return { kind: 'Input', prompt: null, target: null }
@@ -359,6 +370,20 @@ class Parser {
     return { kind: 'PrgmCall', name }
   }
 
+  /** Parses a bare list or matrix name, e.g. for dim(L1) / dim([A]) / Fill(0,L1). */
+  private parseListOrMatrixName(): { type: 'List'; name: string } | { type: 'Matrix'; name: string } {
+    const tok = this.current()
+    if (tok.type === 'LIST') {
+      this.advance()
+      return { type: 'List', name: tok.text }
+    }
+    if (tok.type === 'MATRIX') {
+      this.advance()
+      return { type: 'Matrix', name: tok.text.slice(1, -1) }
+    }
+    this.error('Expected a list (L1-L6) or matrix ([A]-[J])', tok)
+  }
+
   private parseStoreTarget(): StoreTarget {
     const tok = this.current()
     if (tok.type === 'VAR') {
@@ -379,7 +404,26 @@ class Parser {
       }
       return { type: 'List', name: tok.text }
     }
-    this.error('Expected a variable, list, or Str to store into', tok)
+    if (tok.type === 'MATRIX') {
+      this.advance()
+      const name = tok.text.slice(1, -1)
+      if (this.current().type === 'LPAREN') {
+        this.advance()
+        const row = this.parseExpr()
+        this.expect('COMMA', '","')
+        const col = this.parseExpr()
+        this.expect('RPAREN', '")"')
+        return { type: 'MatrixElement', name, row, col }
+      }
+      return { type: 'Matrix', name }
+    }
+    if (tok.type === 'KEYWORD' && tok.text === 'dim(') {
+      this.advance()
+      const target = this.parseListOrMatrixName()
+      this.expect('RPAREN', '")"')
+      return { type: 'Dim', target }
+    }
+    this.error('Expected a variable, list, matrix, or Str to store into', tok)
   }
 
   // --- Expressions (lowest to highest precedence) --------------------
@@ -433,6 +477,7 @@ class Parser {
   private canStartImplicitFactor(tok: Token): boolean {
     if (tok.type === 'NUMBER' || tok.type === 'VAR' || tok.type === 'LIST' || tok.type === 'STRVAR') return true
     if (tok.type === 'ANS' || tok.type === 'PI' || tok.type === 'EULER' || tok.type === 'LPAREN') return true
+    if (tok.type === 'MATRIX') return true
     if (tok.type === 'KEYWORD' && tok.text.endsWith('(') && !STATEMENT_ONLY_KEYWORDS.has(tok.text)) return true
     return false
   }
@@ -552,6 +597,42 @@ class Parser {
         }
         this.expect('RBRACE', '"}"')
         return { type: 'ListLiteral', elements }
+      }
+      case 'MATRIX': {
+        this.advance()
+        const name = tok.text.slice(1, -1) // "[A]" -> "A"
+        if (this.current().type === 'LPAREN') {
+          this.advance()
+          const row = this.parseExpr()
+          this.expect('COMMA', '","')
+          const col = this.parseExpr()
+          this.expect('RPAREN', '")"')
+          return { type: 'MatrixElement', name, row, col }
+        }
+        return { type: 'Matrix', name }
+      }
+      case 'LBRACKET': {
+        // A matrix literal: [[1,2,3][4,5,6]] — one or more row-brackets,
+        // one immediately after another (no comma between rows).
+        this.advance()
+        const rows: Expr[][] = []
+        while (this.current().type === 'LBRACKET') {
+          this.advance()
+          const row: Expr[] = [this.parseExpr()]
+          while (this.current().type === 'COMMA') {
+            this.advance()
+            row.push(this.parseExpr())
+          }
+          this.expect('RBRACKET', '"]"')
+          rows.push(row)
+        }
+        this.expect('RBRACKET', '"]"')
+        if (rows.length === 0) this.error('A matrix literal needs at least one row, e.g. [[1,2][3,4]]')
+        const width = rows[0].length
+        if (rows.some((r) => r.length !== width)) {
+          this.error('Every row in a matrix literal must have the same number of columns')
+        }
+        return { type: 'MatrixLiteral', rows }
       }
       case 'KEYWORD': {
         if (STATEMENT_ONLY_KEYWORDS.has(tok.text)) {

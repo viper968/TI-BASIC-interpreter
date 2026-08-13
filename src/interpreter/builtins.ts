@@ -4,12 +4,15 @@ import {
   checkFinite,
   list,
   mapNumeric,
+  matrix,
   num,
   requireList,
+  requireMatrix,
   requireNumber,
   requireString,
   str,
 } from './values'
+import * as mat from './matrix'
 
 export type AngleMode = 'degree' | 'radian'
 
@@ -99,9 +102,47 @@ export const BUILTINS: Record<string, Builtin> = {
     const g = gcd(a, b)
     return num(g === 0 ? 0 : Math.abs(Math.round(a) * Math.round(b)) / g)
   },
-  'dim(': (args) => num(requireList(args[0], 'a list').length),
+  'dim(': (args) => {
+    const a = args[0]
+    if (a.kind === 'list') return num(a.value.length)
+    if (a.kind === 'matrix') {
+      const [rows, cols] = mat.dims(a.value)
+      return list([rows, cols])
+    }
+    throw new TIError('ERR:DATA TYPE', 'dim( expects a list or matrix')
+  },
   'sum(': (args) => num(requireList(args[0], 'a list').reduce((a, b) => a + b, 0)),
-  'augment(': (args) => list([...requireList(args[0], 'a list'), ...requireList(args[1], 'a list')]),
+  'augment(': (args) => {
+    const [a, b] = args
+    if (a.kind === 'list' && b.kind === 'list') return list([...a.value, ...b.value])
+    if (a.kind === 'matrix' && b.kind === 'matrix') return matrix(mat.augment(a.value, b.value))
+    throw new TIError('ERR:DATA TYPE', 'augment( requires two lists or two matrices')
+  },
+  'det(': (args) => num(mat.determinant(requireMatrix(args[0]))),
+  'Transpose(': (args) => matrix(mat.transpose(requireMatrix(args[0]))),
+  'identity(': (args) => matrix(mat.identity(Math.round(requireNumber(args[0], 'a size')))),
+  'randM(': (args) => {
+    const rows = Math.round(requireNumber(args[0], 'a row count'))
+    const cols = Math.round(requireNumber(args[1], 'a column count'))
+    return matrix(mat.random(rows, cols))
+  },
+  'ref(': (args) => matrix(mat.ref(requireMatrix(args[0]))),
+  'rref(': (args) => matrix(mat.rref(requireMatrix(args[0]))),
+  'rowSwap(': (args) =>
+    matrix(mat.rowSwap(requireMatrix(args[0]), requireNumber(args[1], 'a row'), requireNumber(args[2], 'a row'))),
+  'row+(': (args) =>
+    matrix(mat.rowAdd(requireMatrix(args[0]), requireNumber(args[1], 'a row'), requireNumber(args[2], 'a row'))),
+  '*row(': (args) =>
+    matrix(mat.scaleRow(requireMatrix(args[1], 'a matrix'), requireNumber(args[0], 'a scale factor'), requireNumber(args[2], 'a row'))),
+  '*row+(': (args) =>
+    matrix(
+      mat.scaleAddRow(
+        requireMatrix(args[1], 'a matrix'),
+        requireNumber(args[0], 'a scale factor'),
+        requireNumber(args[2], 'a row'),
+        requireNumber(args[3], 'a row'),
+      ),
+    ),
   'length(': (args) => num(requireString(args[0], 'a string').length),
   'sub(': (args) => {
     const s = requireString(args[0], 'a string')

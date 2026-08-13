@@ -115,6 +115,65 @@ describe('parser: expressions', () => {
       operand: { type: 'Postfix', op: '►Frac', operand: { type: 'Number', value: 0.5 } },
     })
   })
+
+  it('parses a whole-matrix reference', () => {
+    const { program, diagnostics } = parse('[A]')
+    expect(diagnostics).toHaveLength(0)
+    const stmt = program.instructions[0].stmt
+    if (stmt.kind !== 'Expr') throw new Error('expected Expr')
+    expect(stmt.expr).toEqual({ type: 'Matrix', name: 'A' })
+  })
+
+  it('parses matrix element access', () => {
+    const { program, diagnostics } = parse('[A](1,2)')
+    expect(diagnostics).toHaveLength(0)
+    const stmt = program.instructions[0].stmt
+    if (stmt.kind !== 'Expr') throw new Error('expected Expr')
+    expect(stmt.expr).toEqual({
+      type: 'MatrixElement',
+      name: 'A',
+      row: { type: 'Number', value: 1 },
+      col: { type: 'Number', value: 2 },
+    })
+  })
+
+  it('parses a matrix literal', () => {
+    const { program, diagnostics } = parse('[[1,2][3,4]]')
+    expect(diagnostics).toHaveLength(0)
+    const stmt = program.instructions[0].stmt
+    if (stmt.kind !== 'Expr') throw new Error('expected Expr')
+    expect(stmt.expr).toEqual({
+      type: 'MatrixLiteral',
+      rows: [
+        [
+          { type: 'Number', value: 1 },
+          { type: 'Number', value: 2 },
+        ],
+        [
+          { type: 'Number', value: 3 },
+          { type: 'Number', value: 4 },
+        ],
+      ],
+    })
+  })
+
+  it('rejects a ragged matrix literal', () => {
+    const { diagnostics } = parse('[[1,2][3]]')
+    expect(diagnostics.length).toBeGreaterThan(0)
+  })
+
+  it('implicitly multiplies a number by a matrix', () => {
+    const { program, diagnostics } = parse('2[A]')
+    expect(diagnostics).toHaveLength(0)
+    const stmt = program.instructions[0].stmt
+    if (stmt.kind !== 'Expr') throw new Error('expected Expr')
+    expect(stmt.expr).toEqual({
+      type: 'Binary',
+      op: '*',
+      left: { type: 'Number', value: 2 },
+      right: { type: 'Matrix', name: 'A' },
+    })
+  })
 })
 
 describe('parser: statements', () => {
@@ -126,6 +185,59 @@ describe('parser: statements', () => {
       expr: { type: 'Number', value: 5 },
       target: { type: 'Var', name: 'A' },
     })
+  })
+
+  it('parses storing into a whole matrix and a matrix element', () => {
+    const whole = parse('[[1,2][3,4]]->[A]')
+    expect(whole.diagnostics).toHaveLength(0)
+    expect(whole.program.instructions[0].stmt).toMatchObject({ kind: 'Store', target: { type: 'Matrix', name: 'A' } })
+
+    const elem = parse('5->[A](1,2)')
+    expect(elem.diagnostics).toHaveLength(0)
+    expect(elem.program.instructions[0].stmt).toMatchObject({
+      kind: 'Store',
+      target: { type: 'MatrixElement', name: 'A', row: { type: 'Number', value: 1 }, col: { type: 'Number', value: 2 } },
+    })
+  })
+
+  it('parses dim( resize store targets for both lists and matrices', () => {
+    const listResize = parse('{5}->dim(L1)')
+    expect(listResize.diagnostics).toHaveLength(0)
+    expect(listResize.program.instructions[0].stmt).toEqual({
+      kind: 'Store',
+      expr: { type: 'ListLiteral', elements: [{ type: 'Number', value: 5 }] },
+      target: { type: 'Dim', target: { type: 'List', name: 'L1' } },
+    })
+
+    const matrixResize = parse('{2,3}->dim([A])')
+    expect(matrixResize.diagnostics).toHaveLength(0)
+    expect(matrixResize.program.instructions[0].stmt).toMatchObject({
+      kind: 'Store',
+      target: { type: 'Dim', target: { type: 'Matrix', name: 'A' } },
+    })
+  })
+
+  it('parses Fill( for a list and a matrix', () => {
+    const listFill = parse('Fill(0,L1)')
+    expect(listFill.diagnostics).toHaveLength(0)
+    expect(listFill.program.instructions[0].stmt).toEqual({
+      kind: 'Fill',
+      value: { type: 'Number', value: 0 },
+      target: { type: 'List', name: 'L1' },
+    })
+
+    const matrixFill = parse('Fill(0,[A])')
+    expect(matrixFill.diagnostics).toHaveLength(0)
+    expect(matrixFill.program.instructions[0].stmt).toEqual({
+      kind: 'Fill',
+      value: { type: 'Number', value: 0 },
+      target: { type: 'Matrix', name: 'A' },
+    })
+  })
+
+  it('rejects Fill( used inside an expression', () => {
+    const { diagnostics } = parse('Disp Fill(0,L1)')
+    expect(diagnostics.length).toBeGreaterThan(0)
   })
 
   it('parses For( with and without a step', () => {

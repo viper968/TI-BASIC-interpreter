@@ -26,6 +26,7 @@ export type TIErrorCode =
   | 'ERR:STO'
   | 'ERR:MEMORY'
   | 'ERR:NONREAL ANS'
+  | 'ERR:SINGULAR MAT'
 
 export class TIError extends Error {
   readonly code: TIErrorCode

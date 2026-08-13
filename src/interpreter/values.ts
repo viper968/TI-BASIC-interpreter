@@ -1,14 +1,17 @@
 import { TIError } from './errors'
+import { formatMatrix, type MatrixData } from './matrix'
 
 /** Runtime value types the interpreter operates on. */
 export type Value =
   | { kind: 'number'; value: number }
   | { kind: 'string'; value: string }
   | { kind: 'list'; value: number[] }
+  | { kind: 'matrix'; value: MatrixData }
 
 export const num = (value: number): Value => ({ kind: 'number', value })
 export const str = (value: string): Value => ({ kind: 'string', value })
 export const list = (value: number[]): Value => ({ kind: 'list', value })
+export const matrix = (value: MatrixData): Value => ({ kind: 'matrix', value })
 
 /** TI-BASIC truthiness: any nonzero number is true; a 1-element list uses that element. */
 export function isTruthy(v: Value): boolean {
@@ -92,6 +95,7 @@ export function formatList(values: number[], opts: NumberFormatOptions = {}): st
 export function formatValue(v: Value, opts: NumberFormatOptions = {}): string {
   if (v.kind === 'number') return formatNumber(v.value, opts)
   if (v.kind === 'string') return v.value
+  if (v.kind === 'matrix') return formatMatrix(v.value, (n) => formatNumber(n, opts))
   return formatList(v.value, opts)
 }
 
@@ -179,6 +183,11 @@ export function requireString(v: Value, what = 'a string'): string {
 
 export function requireList(v: Value, what = 'a list'): number[] {
   if (v.kind !== 'list') throw new TIError('ERR:DATA TYPE', `Expected ${what}`)
+  return v.value
+}
+
+export function requireMatrix(v: Value, what = 'a matrix'): MatrixData {
+  if (v.kind !== 'matrix') throw new TIError('ERR:DATA TYPE', `Expected ${what}`)
   return v.value
 }
 

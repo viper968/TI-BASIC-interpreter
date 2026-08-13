@@ -14,6 +14,9 @@ export type Expr =
   | { type: 'Postfix'; op: '²' | '⁻¹' | '!' | '►Frac' | '►Dec'; operand: Expr }
   | { type: 'Call'; name: string; args: Expr[] } // name is the canonical keyword, e.g. "sin("
   | { type: 'ListLiteral'; elements: Expr[] } // {1,2,3}
+  | { type: 'Matrix'; name: string } // whole matrix, e.g. [A]
+  | { type: 'MatrixElement'; name: string; row: Expr; col: Expr } // [A](1,2)
+  | { type: 'MatrixLiteral'; rows: Expr[][] } // [[1,2][3,4]]
 
 export type BinaryOp =
   | '+'
@@ -39,6 +42,10 @@ export type StoreTarget =
   | { type: 'List'; name: string }
   | { type: 'ListElement'; name: string; index: Expr }
   | { type: 'StrVar'; name: string }
+  | { type: 'Matrix'; name: string }
+  | { type: 'MatrixElement'; name: string; row: Expr; col: Expr }
+  /** {rows[,cols]}->dim(L1) or {rows,cols}->dim([A]): resizes/(re)creates the target. */
+  | { type: 'Dim'; target: { type: 'List'; name: string } | { type: 'Matrix'; name: string } }
 
 export interface MenuOption {
   text: Expr
@@ -73,6 +80,7 @@ export type Stmt =
   | { kind: 'SetAngleMode'; mode: 'degree' | 'radian' }
   | { kind: 'SetDecimalMode'; digits: number | null } // Fix n (0-9), or Float (null)
   | { kind: 'SetNotation'; mode: 'normal' | 'sci' | 'eng' }
+  | { kind: 'Fill'; value: Expr; target: { type: 'List'; name: string } | { type: 'Matrix'; name: string } }
 
 /** One instruction slot in the compiled, flat program. */
 export interface Instruction {

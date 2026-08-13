@@ -18,6 +18,8 @@ const EXCLUDED_FROM_KEYWORD_TABLE = new Set([
   'prgm', // PRGM, has its own token type
   '10^(', // == NUMBER(10) CARET LPAREN, no special token needed
   'e^(', // == EULER CARET LPAREN, no special token needed
+  '*row(', // starts with '*', matched explicitly before the generic STAR check
+  '*row+(', // ditto
 ])
 
 function buildKeywordTable(): KeywordEntry[] {
@@ -123,6 +125,23 @@ export function tokenize(source: string): LexResult {
       advance(1)
       continue
     }
+    if (ch === '[') {
+      // [A]-[J] (a matrix name) lexes as one token, mirroring L1-L6; any
+      // other "[" (e.g. the start of a [[1,2][3,4]] literal) is generic.
+      if (source[pos + 1] >= 'A' && source[pos + 1] <= 'J' && source[pos + 2] === ']') {
+        push('MATRIX', source.slice(pos, pos + 3), startLine, startCol)
+        advance(3)
+        continue
+      }
+      push('LBRACKET', '[', startLine, startCol)
+      advance(1)
+      continue
+    }
+    if (ch === ']') {
+      push('RBRACKET', ']', startLine, startCol)
+      advance(1)
+      continue
+    }
     if (ch === '"') {
       let str = ''
       advance(1)
@@ -197,6 +216,19 @@ export function tokenize(source: string): LexResult {
       continue
     }
     if (ch === '*') {
+      // *row( and *row+( are MATRX MATH row-operation commands whose names
+      // happen to start with the multiply glyph; check for them before
+      // falling back to a plain STAR operator.
+      if (source.startsWith('*row+(', pos)) {
+        push('KEYWORD', '*row+(', startLine, startCol)
+        advance(6)
+        continue
+      }
+      if (source.startsWith('*row(', pos)) {
+        push('KEYWORD', '*row(', startLine, startCol)
+        advance(5)
+        continue
+      }
       push('STAR', '*', startLine, startCol)
       advance(1)
       continue

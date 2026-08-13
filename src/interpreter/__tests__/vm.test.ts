@@ -281,3 +281,230 @@ describe('vm: sub-programs', () => {
     expect(r.error?.code).toBe('ERR:UNDEFINED')
   })
 })
+
+describe('vm: matrices', () => {
+  it('builds a matrix from a literal and reads elements back', () => {
+    const r = run('[[1,2,3][4,5,6]]->[A]\nDisp [A](2,3)')
+    expect(r.error).toBeNull()
+    expect(r.state.matrices.A).toEqual([
+      [1, 2, 3],
+      [4, 5, 6],
+    ])
+    expect(r.screenText.split('\n')[0]).toBe('6')
+  })
+
+  it('evaluates expressions inside a matrix literal', () => {
+    const r = run('5->X\n[[X,X+1][0,0]]->[A]')
+    expect(r.error).toBeNull()
+    expect(r.state.matrices.A).toEqual([
+      [5, 6],
+      [0, 0],
+    ])
+  })
+
+  it('rejects a matrix index that is out of range', () => {
+    const r = run('[[1,2][3,4]]->[A]\nDisp [A](3,1)')
+    expect(r.error?.code).toBe('ERR:INVALID DIM')
+  })
+
+  it('assigns a single matrix element', () => {
+    const r = run('[[1,2][3,4]]->[A]\n9->[A](1,1)\nDisp [A](1,1)')
+    expect(r.error).toBeNull()
+    expect(r.state.matrices.A[0][0]).toBe(9)
+  })
+
+  it('adds and subtracts same-size matrices', () => {
+    const r = run('[[1,2][3,4]]->[A]\n[[10,10][10,10]]->[B]\n[A]+[B]->[C]\n[B]-[A]->[D]')
+    expect(r.error).toBeNull()
+    expect(r.state.matrices.C).toEqual([
+      [11, 12],
+      [13, 14],
+    ])
+    expect(r.state.matrices.D).toEqual([
+      [9, 8],
+      [7, 6],
+    ])
+  })
+
+  it('rejects adding matrices of different sizes', () => {
+    const r = run('[[1,2]]->[A]\n[[1,2,3]]->[B]\n[A]+[B]')
+    expect(r.error?.code).toBe('ERR:DIM MISMATCH')
+  })
+
+  it('multiplies matrices, and scales by a scalar on either side', () => {
+    const r = run('[[1,2][3,4]]->[A]\n[[5,6][7,8]]->[B]\n[A]*[B]->[C]\n2[A]->[D]\n[A]*2->[E]')
+    expect(r.error).toBeNull()
+    // [[1,2][3,4]] * [[5,6][7,8]] = [[19,22][43,50]]
+    expect(r.state.matrices.C).toEqual([
+      [19, 22],
+      [43, 50],
+    ])
+    expect(r.state.matrices.D).toEqual([
+      [2, 4],
+      [6, 8],
+    ])
+    expect(r.state.matrices.E).toEqual([
+      [2, 4],
+      [6, 8],
+    ])
+  })
+
+  it('divides a matrix by a scalar', () => {
+    const r = run('[[2,4][6,8]]->[A]\n[A]/2->[B]')
+    expect(r.error).toBeNull()
+    expect(r.state.matrices.B).toEqual([
+      [1, 2],
+      [3, 4],
+    ])
+  })
+
+  it('inverts a matrix with ⁻¹ and with ^-1', () => {
+    const r = run('[[4,7][2,6]]->[A]\n[A]⁻¹->[B]\n[A]^-1->[C]')
+    expect(r.error).toBeNull()
+    // det = 24-14=10; inverse = 1/10 * [[6,-7][-2,4]]
+    expect(r.state.matrices.B[0][0]).toBeCloseTo(0.6)
+    expect(r.state.matrices.B[0][1]).toBeCloseTo(-0.7)
+    expect(r.state.matrices.B[1][0]).toBeCloseTo(-0.2)
+    expect(r.state.matrices.B[1][1]).toBeCloseTo(0.4)
+    expect(r.state.matrices.C).toEqual(r.state.matrices.B)
+  })
+
+  it('raises ERR:SINGULAR MAT when inverting a singular matrix', () => {
+    const r = run('[[1,2][2,4]]->[A]\nDisp [A]⁻¹')
+    expect(r.error?.code).toBe('ERR:SINGULAR MAT')
+  })
+
+  it('squares a matrix with ² and raises it to an integer power with ^', () => {
+    const r = run('[[1,1][0,1]]->[A]\n[A]²->[B]\n[A]^3->[C]')
+    expect(r.error).toBeNull()
+    expect(r.state.matrices.B).toEqual([
+      [1, 2],
+      [0, 1],
+    ])
+    expect(r.state.matrices.C).toEqual([
+      [1, 3],
+      [0, 1],
+    ])
+  })
+
+  it('computes det( and Transpose(', () => {
+    const r = run('[[1,2][3,4]]->[A]\ndet([A])->D\nTranspose([A])->[B]')
+    expect(r.error).toBeNull()
+    expect(r.state.vars.D).toBe(-2)
+    expect(r.state.matrices.B).toEqual([
+      [1, 3],
+      [2, 4],
+    ])
+  })
+
+  it('builds identity( and randM( matrices', () => {
+    const r = run('identity(3)->[A]\nrandM(2,3)->[B]')
+    expect(r.error).toBeNull()
+    expect(r.state.matrices.A).toEqual([
+      [1, 0, 0],
+      [0, 1, 0],
+      [0, 0, 1],
+    ])
+    expect(r.state.matrices.B).toHaveLength(2)
+    expect(r.state.matrices.B[0]).toHaveLength(3)
+  })
+
+  it('augments two matrices side by side', () => {
+    const r = run('[[1,2][3,4]]->[A]\n[[9][9]]->[B]\naugment([A],[B])->[C]')
+    expect(r.error).toBeNull()
+    expect(r.state.matrices.C).toEqual([
+      [1, 2, 9],
+      [3, 4, 9],
+    ])
+  })
+
+  it('solves a system of equations with rref(', () => {
+    // 2x + y = 5, x - y = 1  =>  x=2, y=1
+    const r = run('[[2,1,5][1,-1,1]]->[A]\nrref([A])->[B]')
+    expect(r.error).toBeNull()
+    expect(r.state.matrices.B[0][2]).toBeCloseTo(2)
+    expect(r.state.matrices.B[1][2]).toBeCloseTo(1)
+  })
+
+  it('performs manual row operations', () => {
+    const r = run(
+      [
+        '[[1,2][3,4]]->[A]',
+        'rowSwap([A],1,2)->[B]',
+        'row+([A],1,2)->[C]',
+        '*row(2,[A],1)->[D]',
+        '*row+(2,[A],1,2)->[E]',
+      ].join('\n'),
+    )
+    expect(r.error).toBeNull()
+    expect(r.state.matrices.B).toEqual([
+      [3, 4],
+      [1, 2],
+    ])
+    expect(r.state.matrices.C).toEqual([
+      [1, 2],
+      [4, 6],
+    ])
+    expect(r.state.matrices.D).toEqual([
+      [2, 4],
+      [3, 4],
+    ])
+    expect(r.state.matrices.E).toEqual([
+      [1, 2],
+      [5, 8],
+    ])
+  })
+
+  it('reads and resizes dimensions with dim(', () => {
+    const r = run('[[1,2,3][4,5,6]]->[A]\nDisp dim([A])\n{4,5}->dim([B])\nDisp dim([B])')
+    expect(r.error).toBeNull()
+    expect(r.state.matrices.B).toHaveLength(4)
+    expect(r.state.matrices.B[0]).toHaveLength(5)
+    expect(r.screenText.split('\n')[0]).toBe('{2 3}')
+    expect(r.screenText.split('\n')[1]).toBe('{4 5}')
+  })
+
+  it('resizes a list with {n}->dim(L1), preserving existing values', () => {
+    const r = run('1->L1(1)\n2->L1(2)\n{4}->dim(L1)\nDisp dim(L1)')
+    expect(r.error).toBeNull()
+    expect(r.state.lists.L1).toEqual([1, 2, 0, 0])
+    expect(r.screenText.split('\n')[0]).toBe('4')
+  })
+
+  it('Fill(s a list and a matrix that already have a size', () => {
+    const r = run('{3}->dim(L1)\nFill(7,L1)\n{2,2}->dim([A])\nFill(9,[A])')
+    expect(r.error).toBeNull()
+    expect(r.state.lists.L1).toEqual([7, 7, 7])
+    expect(r.state.matrices.A).toEqual([
+      [9, 9],
+      [9, 9],
+    ])
+  })
+
+  it('rejects Fill( on a matrix that has no dimension yet', () => {
+    const r = run('Fill(1,[A])')
+    expect(r.error?.code).toBe('ERR:INVALID DIM')
+  })
+
+  it('deletes a matrix with DelVar', () => {
+    const r = run('[[1,2][3,4]]->[A]\nDelVar [A]\nDisp dim([A])')
+    expect(r.error).toBeNull()
+    expect(r.state.matrices.A).toEqual([])
+  })
+
+  it('Disp of a matrix renders one line per row', () => {
+    const r = run('[[1,2][3,4]]->[A]\nDisp [A]')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n').slice(0, 2)).toEqual(['[[1 2]', ' [3 4]]'])
+  })
+
+  it('rejects Output( of a matrix', () => {
+    const r = run('[[1,2][3,4]]->[A]\nOutput(1,1,[A])')
+    expect(r.error?.code).toBe('ERR:DATA TYPE')
+  })
+
+  it('rejects mixing a matrix with a list or number where it makes no sense', () => {
+    const r = run('[[1,2][3,4]]->[A]\n[A]<5')
+    expect(r.error?.code).toBe('ERR:DATA TYPE')
+  })
+})

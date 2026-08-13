@@ -4,6 +4,7 @@ export type TokenType =
   | 'STRING'
   | 'VAR' // single-letter real variable: A-Z or theta
   | 'LIST' // L1-L6
+  | 'MATRIX' // [A]-[J], as one token e.g. "[A]"
   | 'STRVAR' // Str0-Str9
   | 'ANS'
   | 'PI'
@@ -15,6 +16,8 @@ export type TokenType =
   | 'RPAREN'
   | 'LBRACE'
   | 'RBRACE'
+  | 'LBRACKET'
+  | 'RBRACKET'
   | 'COMMA'
   | 'COLON'
   | 'NEWLINE'

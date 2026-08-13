@@ -101,4 +101,44 @@ describe('lexer', () => {
     expect(types('π')).toEqual(['PI', 'EOF'])
     expect(types('e')).toEqual(['EULER', 'EOF'])
   })
+
+  it('tokenizes [A]-[J] as a single MATRIX token', () => {
+    const { tokens } = tokenize('[A]')
+    expect(tokens[0]).toMatchObject({ type: 'MATRIX', text: '[A]' })
+    expect(tokens[1].type).toBe('EOF')
+  })
+
+  it('does not swallow [K] as a matrix (only A-J are valid matrix names)', () => {
+    // "[" then "K" (a variable) then "]" -- three separate tokens.
+    expect(types('[K]')).toEqual(['LBRACKET', 'VAR', 'RBRACKET', 'EOF'])
+  })
+
+  it('tokenizes [ and ] generically for matrix literals', () => {
+    expect(types('[[1,2][3,4]]')).toEqual([
+      'LBRACKET',
+      'LBRACKET',
+      'NUMBER',
+      'COMMA',
+      'NUMBER',
+      'RBRACKET',
+      'LBRACKET',
+      'NUMBER',
+      'COMMA',
+      'NUMBER',
+      'RBRACKET',
+      'RBRACKET',
+      'EOF',
+    ])
+  })
+
+  it('tokenizes the *row( and *row+( row-operation keywords, not a bare STAR', () => {
+    const a = tokenize('*row(2,[A],1)')
+    expect(a.tokens[0]).toMatchObject({ type: 'KEYWORD', text: '*row(' })
+
+    const b = tokenize('*row+(2,[A],1,2)')
+    expect(b.tokens[0]).toMatchObject({ type: 'KEYWORD', text: '*row+(' })
+
+    // A plain multiplication still lexes as STAR.
+    expect(types('2*3')).toEqual(['NUMBER', 'STAR', 'NUMBER', 'EOF'])
+  })
 })

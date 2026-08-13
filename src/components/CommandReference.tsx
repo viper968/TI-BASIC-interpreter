@@ -6,6 +6,7 @@ const CATEGORY_LABELS: Record<CommandCategory, string> = {
   io: 'Input / Output',
   variable: 'Variables',
   list: 'Lists',
+  matrix: 'Matrices',
   string: 'Strings',
   math: 'Math',
   logic: 'Logic',

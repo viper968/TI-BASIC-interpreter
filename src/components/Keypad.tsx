@@ -93,6 +93,9 @@ export function Keypad({ onInsert, onClear, onEnter }: Props) {
         <button className="keypad-key" onClick={() => onInsert('{')} title="List literal">
           {'{ }'}
         </button>
+        <button className="keypad-key" onClick={() => onInsert('[')} title="Matrix name or literal, e.g. [A] or [[1,2][3,4]]">
+          [ ]
+        </button>
       </div>
       {showAlpha && (
         <div className="keypad-alpha-grid">

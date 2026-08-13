@@ -32,6 +32,9 @@ own dialects and command sets; this project doesn't try to emulate those.
     "Commands" reference panel are all generated from this table.
   - `builtins.ts`, `values.ts`, `screen.ts` — math/list/string functions,
     the runtime value model, and the 8×16 character home-screen model.
+  - `matrix.ts` — matrix math (add/multiply/inverse/`det(`/`rref(`/row
+    operations/...) as plain `number[][]` functions, kept independent of
+    TI-BASIC syntax; `vm.ts` and `builtins.ts` are its only callers.
 - **`src/components/`, `src/state/`, `src/App.tsx`** — the React GUI: a
   program manager, a syntax-highlighted code editor with live diagnostics,
   a TI-84-style calculator screen that actually runs programs (including
@@ -92,11 +95,21 @@ expression, the calculator re-prompts (mirroring real hardware) instead
 of ending the program; an entry that *parses* but fails when evaluated
 (`1/0`, wrong type for the target, ...) is still a real runtime error.
 
+**Matrices:** the 10 matrix variables `[A]`-`[J]`, `[[1,2][3,4]]` literal
+syntax (rows adjacent, no commas between them), element access
+`[A](row,col)`, `+`/`-`/scalar `*`/scalar `/`/matrix `*` matrix, `⁻¹`
+(inverse) and `²` (also usable as `^-1` / `^n` for a non-negative integer
+power), `det(`, `Transpose(`, `identity(`, `randM(`, `augment(`, `ref(`
+and `rref(` (the usual way to solve a system of equations — see the
+`MATRIX` sample program), the row operations `rowSwap(`/`row+(`/`*row(`/
+`*row+(`, and resizing either a list or a matrix by storing dimensions
+into `dim(` (`{5}->dim(L1)`, `{2,3}->dim([A])`) followed by `Fill(`.
+
 Open the **Commands** tab in the app for the full, searchable list with
 syntax and descriptions — it's generated straight from
 `src/interpreter/commands.ts`. The **Calculator** tab also shows a live
-**Variables** watch panel (real vars, strings, and lists currently holding
-a non-default value) while a program runs or is paused.
+**Variables** watch panel (real vars, strings, lists, and matrices
+currently holding a non-default value) while a program runs or is paused.
 
 A generous but finite execution-step cap guards against runaway loops
 freezing the browser tab (real hardware has no such limit, but a web page
@@ -107,9 +120,7 @@ does need one).
 Ranked by (real-world usefulness) ÷ (implementation cost) — earlier items
 are more likely to land next.
 
-1. **Matrices** (`[A]`-`[J]`) — arithmetic, `det(`, inverse via `⁻¹`,
-   `transpose(`, `identity(`, `augment(`, and a small matrix editor.
-   Self-contained: extends the `Value` union, no new display model needed.
+1. ~~**Matrices**~~ — done: see "Supported language" above.
 2. **Statistics** — `1-Var Stats`/`2-Var Stats`, `LinReg(ax+b)` and other
    regressions, `mean(`/`median(`/`stdDev(`/`variance(`, and distribution
    functions (`normalcdf(`, `invNorm(`). All numeric output; doesn't
@@ -121,17 +132,17 @@ are more likely to land next.
    screen this app has today), function plotting, `DispGraph`, drawing
    primitives (`Line(`, `Circle(`, `Pxl-On(`/`Pxl-Off(`/`pxl-Change(`,
    `Shade(`), and ideally a trace cursor. Roughly as much work as
-   everything built so far, combined — sequenced after matrices/stats
-   since those are cheaper and don't block on it.
+   everything built so far, combined — sequenced after stats since that's
+   cheaper and doesn't block on it.
 4. **Complex numbers** — `i`, complex arithmetic, `a+bi`/`re^θi` display
    modes. Touches more of the codebase than it looks (every math builtin
    needs a complex-aware path or an explicit "still real-only" error), and
    is less common in typical intro-level programs than matrices/stats, so
    it's ranked after graphing rather than before it.
 5. **Long tail**, done opportunistically: `SortA(`/`SortD(`, `ClrList`,
-   `cumSum(`, `ΔList(`, `fill(`, `InString(`, calculus tools (`nDeriv(`,
-   `fnInt(`, `solve(`, `fMin(`/`fMax(`), user-named lists beyond `L1`-`L6`,
-   remaining CATALOG stragglers.
+   `cumSum(`, `ΔList(`, `InString(`, calculus tools (`nDeriv(`, `fnInt(`,
+   `solve(`, `fMin(`/`fMax(`), user-named lists beyond `L1`-`L6`, remaining
+   CATALOG stragglers.
 
 **Permanently out of scope**, worth saying explicitly rather than leaving
 as an open question:

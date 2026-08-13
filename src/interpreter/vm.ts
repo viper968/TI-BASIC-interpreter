@@ -13,12 +13,15 @@ import {
   isTruthy,
   list,
   mapNumeric,
+  matrix,
   num,
   requireList,
+  requireMatrix,
   requireNumber,
   requireString,
   str,
 } from './values'
+import * as mat from './matrix'
 import { BUILTINS, type AngleMode, type BuiltinCtx, factorial } from './builtins'
 import { SCREEN_COLS, SCREEN_ROWS, type Screen, clearScreen, createScreen, dispLine, writeAt } from './screen'
 
@@ -45,11 +48,13 @@ export function compileProgram(source: string): CompiledProgram {
 const REAL_VAR_NAMES = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'θ']
 const STR_VAR_NAMES = Array.from({ length: 10 }, (_, i) => `Str${i}`)
 const LIST_NAMES = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6']
+const MATRIX_NAMES = [...'ABCDEFGHIJ']
 
 export interface InterpreterState {
   vars: Record<string, number>
   strVars: Record<string, string>
   lists: Record<string, number[]>
+  matrices: Record<string, number[][]>
   ans: Value
   angleMode: AngleMode
   /** MODE screen: Normal/Sci/Eng notation. */
@@ -67,10 +72,13 @@ export function createInterpreterState(): InterpreterState {
   for (const n of STR_VAR_NAMES) strVars[n] = ''
   const lists: Record<string, number[]> = {}
   for (const n of LIST_NAMES) lists[n] = []
+  const matrices: Record<string, number[][]> = {}
+  for (const n of MATRIX_NAMES) matrices[n] = []
   return {
     vars,
     strVars,
     lists,
+    matrices,
     ans: num(0),
     angleMode: 'degree',
     notation: 'normal',
@@ -150,7 +158,11 @@ class Runner {
   }
 
   private dispValue(v: Value) {
-    dispLine(this.state.screen, formatValue(v, this.numberFormatOpts()))
+    // A matrix formats to multiple lines (one row per line); split and
+    // Disp each so it wraps/scrolls the same as separate Disp calls would.
+    for (const line of formatValue(v, this.numberFormatOpts()).split('\n')) {
+      dispLine(this.state.screen, line)
+    }
   }
 
   private resolveCompiled(name: string): CompiledProgram {
@@ -204,10 +216,25 @@ class Runner {
         return this.evalCall(expr.name, expr.args)
       case 'ListLiteral':
         return list(expr.elements.map((e) => requireNumber(this.evalExpr(e), 'a number in a list literal')))
+      case 'Matrix':
+        return matrix((this.state.matrices[expr.name] ?? []).map((row) => [...row]))
+      case 'MatrixElement': {
+        const m = this.state.matrices[expr.name] ?? []
+        const row = Math.round(requireNumber(this.evalExpr(expr.row), 'a row index'))
+        const col = Math.round(requireNumber(this.evalExpr(expr.col), 'a column index'))
+        const [rows, cols] = mat.dims(m)
+        if (row < 1 || row > rows || col < 1 || col > cols) {
+          throw new TIError('ERR:INVALID DIM', `[${expr.name}](${row},${col}) is out of range`)
+        }
+        return num(m[row - 1][col - 1])
+      }
+      case 'MatrixLiteral':
+        return matrix(expr.rows.map((row) => row.map((e) => requireNumber(this.evalExpr(e), 'a number in a matrix literal'))))
     }
   }
 
   private evalBinary(op: BinaryOp, l: Value, r: Value): Value {
+    if (l.kind === 'matrix' || r.kind === 'matrix') return this.evalMatrixBinary(op, l, r)
     switch (op) {
       case '+':
         if (l.kind === 'string' || r.kind === 'string') {
@@ -259,8 +286,49 @@ class Runner {
     }
   }
 
+  /** +, -, *, /, ^ when at least one operand is a matrix. */
+  private evalMatrixBinary(op: BinaryOp, l: Value, r: Value): Value {
+    switch (op) {
+      case '+':
+        return matrix(mat.add(requireMatrix(l, 'a matrix'), requireMatrix(r, 'a matrix')))
+      case '-':
+        return matrix(mat.subtract(requireMatrix(l, 'a matrix'), requireMatrix(r, 'a matrix')))
+      case '*':
+        if (l.kind === 'matrix' && r.kind === 'matrix') return matrix(mat.multiply(l.value, r.value))
+        if (l.kind === 'matrix' && r.kind === 'number') return matrix(mat.scale(l.value, r.value))
+        if (l.kind === 'number' && r.kind === 'matrix') return matrix(mat.scale(r.value, l.value))
+        throw new TIError('ERR:DATA TYPE', 'A matrix can only be multiplied by a matrix or a number')
+      case '/':
+        if (l.kind === 'matrix' && r.kind === 'number') {
+          if (r.value === 0) throw new TIError('ERR:DIVIDE BY 0', 'Cannot divide by 0')
+          return matrix(mat.scale(l.value, 1 / r.value))
+        }
+        throw new TIError('ERR:DATA TYPE', 'A matrix can only be divided by a number')
+      case '^': {
+        const m = requireMatrix(l, 'a matrix')
+        const exp = Math.round(requireNumber(r, 'an integer exponent'))
+        if (exp === -1) return matrix(mat.inverse(m))
+        const [rows, cols] = mat.dims(m)
+        if (rows !== cols) throw new TIError('ERR:DIM MISMATCH', 'Matrix exponentiation requires a square matrix')
+        if (exp < 0) {
+          throw new TIError('ERR:DOMAIN', 'A matrix exponent must be a non-negative integer, or -1 for the inverse')
+        }
+        let result = mat.identity(rows)
+        for (let i = 0; i < exp; i++) result = mat.multiply(result, m)
+        return matrix(result)
+      }
+      default:
+        throw new TIError('ERR:DATA TYPE', `"${op}" is not supported for matrices`)
+    }
+  }
+
   private evalPostfix(op: '²' | '⁻¹' | '!' | '►Frac' | '►Dec', operand: Expr): Value {
     const v = this.evalExpr(operand)
+    if (v.kind === 'matrix') {
+      if (op === '²') return matrix(mat.multiply(v.value, v.value))
+      if (op === '⁻¹') return matrix(mat.inverse(v.value))
+      throw new TIError('ERR:DATA TYPE', `"${op}" is not supported for matrices`)
+    }
     if (op === '²') return mapNumeric(v, (x) => checkFinite(x * x))
     if (op === '⁻¹') {
       return mapNumeric(v, (x) => {
@@ -323,6 +391,61 @@ class Runner {
         arr[idx - 1] = n
         return
       }
+      case 'Matrix':
+        this.state.matrices[target.name] = requireMatrix(value, 'a matrix').map((row) => [...row])
+        return
+      case 'MatrixElement': {
+        const m = this.state.matrices[target.name] ?? (this.state.matrices[target.name] = [])
+        const row = Math.round(requireNumber(this.evalExpr(target.row), 'a row index'))
+        const col = Math.round(requireNumber(this.evalExpr(target.col), 'a column index'))
+        const [rows, cols] = mat.dims(m)
+        const n = requireNumber(value, 'a number')
+        if (row < 1 || row > rows || col < 1 || col > cols) {
+          throw new TIError('ERR:INVALID DIM', `[${target.name}](${row},${col}) is out of range`)
+        }
+        m[row - 1][col - 1] = n
+        return
+      }
+      case 'Dim': {
+        const wanted = requireList(value, 'a list of dimensions')
+        if (target.target.type === 'List') {
+          const newLen = Math.round(wanted[0] ?? 0)
+          if (!Number.isInteger(newLen) || newLen < 0) {
+            throw new TIError('ERR:DOMAIN', 'dim( size must be a non-negative integer')
+          }
+          const old = this.state.lists[target.target.name] ?? []
+          this.state.lists[target.target.name] = Array.from({ length: newLen }, (_, i) => old[i] ?? 0)
+        } else {
+          const newRows = Math.round(wanted[0] ?? 0)
+          const newCols = Math.round(wanted[1] ?? 0)
+          if (!Number.isInteger(newRows) || !Number.isInteger(newCols) || newRows < 0 || newCols < 0) {
+            throw new TIError('ERR:DOMAIN', 'dim( size must be non-negative integers')
+          }
+          const old = this.state.matrices[target.target.name] ?? []
+          this.state.matrices[target.target.name] = Array.from({ length: newRows }, (_, i) =>
+            Array.from({ length: newCols }, (_, j) => old[i]?.[j] ?? 0),
+          )
+        }
+        return
+      }
+    }
+  }
+
+  /** A human-readable label for a store target, used by Prompt's "NAME=?" line. */
+  private targetLabel(t: StoreTarget): string {
+    switch (t.type) {
+      case 'Var':
+      case 'StrVar':
+      case 'List':
+        return t.name
+      case 'Matrix':
+        return `[${t.name}]`
+      case 'ListElement':
+        return `${t.name}(...)`
+      case 'MatrixElement':
+        return `[${t.name}](...)`
+      case 'Dim':
+        return `dim(${this.targetLabel(t.target)})`
     }
   }
 
@@ -490,7 +613,9 @@ class Runner {
         if (row < 1 || row > SCREEN_ROWS || col < 1 || col > SCREEN_COLS) {
           throw new TIError('ERR:DOMAIN', `Output( row/col must be within 1-${SCREEN_ROWS} / 1-${SCREEN_COLS}`)
         }
-        writeAt(this.state.screen, row, col, formatValue(this.evalExpr(stmt.value), this.numberFormatOpts()))
+        const text = formatValue(this.evalExpr(stmt.value), this.numberFormatOpts())
+        if (text.includes('\n')) throw new TIError('ERR:DATA TYPE', "Output( can't display a matrix")
+        writeAt(this.state.screen, row, col, text)
         yield { type: 'tick' }
         return { kind: 'next' }
       }
@@ -502,7 +627,7 @@ class Runner {
       }
       case 'Prompt': {
         for (const target of stmt.targets) {
-          const v = yield* this.readValue(`${target.name}=?`)
+          const v = yield* this.readValue(`${this.targetLabel(target)}=?`)
           this.assignTo(target, v)
         }
         return { kind: 'next' }
@@ -517,7 +642,25 @@ class Runner {
         if (t.type === 'Var') this.state.vars[t.name] = 0
         else if (t.type === 'StrVar') this.state.strVars[t.name] = ''
         else if (t.type === 'List') this.state.lists[t.name] = []
-        else throw new TIError('ERR:DATA TYPE', 'DelVar requires a variable, list, or Str, not a list element')
+        else if (t.type === 'Matrix') this.state.matrices[t.name] = []
+        else throw new TIError('ERR:DATA TYPE', 'DelVar requires a variable, list, matrix, or Str')
+        return { kind: 'next' }
+      }
+      case 'Fill': {
+        const n = requireNumber(this.evalExpr(stmt.value), 'a number')
+        if (stmt.target.type === 'List') {
+          const arr = this.state.lists[stmt.target.name]
+          if (!arr || arr.length === 0) {
+            throw new TIError('ERR:INVALID DIM', `${stmt.target.name} has no size yet; set one with dim( first`)
+          }
+          this.state.lists[stmt.target.name] = arr.map(() => n)
+        } else {
+          const m = this.state.matrices[stmt.target.name]
+          if (!m || m.length === 0) {
+            throw new TIError('ERR:INVALID DIM', `[${stmt.target.name}] has no size yet; set one with dim( first`)
+          }
+          this.state.matrices[stmt.target.name] = m.map((row) => row.map(() => n))
+        }
         return { kind: 'next' }
       }
       case 'PrgmCall':
