@@ -78,9 +78,9 @@ The whole app is static — no backend, no API calls, everything (including
 running programs) happens client-side. `.github/workflows/deploy.yml`
 builds and deploys `dist/` to GitHub Pages on every push to `main`; enable
 it once in **Settings → Pages → Source → GitHub Actions** and the site is
-live at `https://<owner>.github.io/the-game/`. `vite.config.ts`'s `base`
-only switches to `/the-game/` inside GitHub Actions (via the
-`GITHUB_ACTIONS` env var Actions sets automatically) — local
+live at `https://<owner>.github.io/TI-BASIC-interpreter/`. `vite.config.ts`'s
+`base` only switches to `/TI-BASIC-interpreter/` inside GitHub Actions (via
+the `GITHUB_ACTIONS` env var Actions sets automatically) — local
 `dev`/`build`/`preview` stay at `/`. Any other static host (Vercel,
 Netlify, Cloudflare Pages, ...) works too: point it at `npm run build` /
 `dist`.
