@@ -1,0 +1,573 @@
+import type { Diagnostic, TIErrorCode } from './errors'
+import { TIError } from './errors'
+import type { BinaryOp, Expr, Instruction, Stmt, StoreTarget } from './ast'
+import { link as linkProgram, type LinkInfo, type LinkedProgram } from './linker'
+import { parse } from './parser'
+import {
+  type Value,
+  broadcastNumeric,
+  checkFinite,
+  formatValue,
+  isTruthy,
+  list,
+  mapNumeric,
+  num,
+  requireList,
+  requireNumber,
+  requireString,
+  str,
+} from './values'
+import { BUILTINS, type AngleMode, type BuiltinCtx, factorial } from './builtins'
+import { SCREEN_COLS, SCREEN_ROWS, type Screen, clearScreen, createScreen, dispLine, writeAt } from './screen'
+
+// ---------------------------------------------------------------------------
+// Compilation
+// ---------------------------------------------------------------------------
+
+export interface CompiledProgram {
+  source: string
+  linked: LinkedProgram
+  diagnostics: Diagnostic[]
+}
+
+export function compileProgram(source: string): CompiledProgram {
+  const { program, diagnostics: parseDiagnostics } = parse(source)
+  const linked = linkProgram(program)
+  return { source, linked, diagnostics: [...parseDiagnostics, ...linked.diagnostics] }
+}
+
+// ---------------------------------------------------------------------------
+// Interpreter state (the calculator's global variable memory + screen)
+// ---------------------------------------------------------------------------
+
+const REAL_VAR_NAMES = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'θ']
+const STR_VAR_NAMES = Array.from({ length: 10 }, (_, i) => `Str${i}`)
+const LIST_NAMES = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6']
+
+export interface InterpreterState {
+  vars: Record<string, number>
+  strVars: Record<string, string>
+  lists: Record<string, number[]>
+  ans: Value
+  angleMode: AngleMode
+  screen: Screen
+  lastKey: number
+}
+
+export function createInterpreterState(): InterpreterState {
+  const vars: Record<string, number> = {}
+  for (const n of REAL_VAR_NAMES) vars[n] = 0
+  const strVars: Record<string, string> = {}
+  for (const n of STR_VAR_NAMES) strVars[n] = ''
+  const lists: Record<string, number[]> = {}
+  for (const n of LIST_NAMES) lists[n] = []
+  return { vars, strVars, lists, ans: num(0), angleMode: 'degree', screen: createScreen(), lastKey: 0 }
+}
+
+// ---------------------------------------------------------------------------
+// Run-loop event protocol
+// ---------------------------------------------------------------------------
+
+export type RunEvent =
+  | { type: 'tick' }
+  | { type: 'input'; prompt: string | null }
+  | { type: 'menu'; title: string; options: { text: string; label: string }[] }
+  | { type: 'pause' }
+  | { type: 'done' }
+  | { type: 'error'; error: TIError }
+
+export type ResumeValue = string | number | undefined
+
+type StmtResult =
+  | { kind: 'next' }
+  | { kind: 'jump'; index: number }
+  | { kind: 'call'; name: string }
+  | { kind: 'return' }
+  | { kind: 'stop' }
+
+interface Frame {
+  compiled: CompiledProgram
+  ip: number
+  loopState: Map<number, { varName: string; end: number; step: number }>
+}
+
+const MAX_STEPS = 4_000_000
+const MAX_CALL_DEPTH = 60
+
+/** Resolves the source of another stored program, for `prgmNAME` calls. */
+export type ProgramResolver = (name: string) => string | undefined
+
+class Runner {
+  private cache = new Map<string, CompiledProgram>()
+  private steps = 0
+  private state: InterpreterState
+  private resolveProgram: ProgramResolver
+
+  constructor(state: InterpreterState, resolveProgram: ProgramResolver) {
+    this.state = state
+    this.resolveProgram = resolveProgram
+  }
+
+  private builtinCtx(): BuiltinCtx {
+    return {
+      angleMode: this.state.angleMode,
+      takeLastKey: () => {
+        const k = this.state.lastKey
+        this.state.lastKey = 0
+        return k
+      },
+    }
+  }
+
+  private dispValue(v: Value) {
+    dispLine(this.state.screen, formatValue(v))
+  }
+
+  private resolveCompiled(name: string): CompiledProgram {
+    const cached = this.cache.get(name)
+    if (cached) return cached
+    const source = this.resolveProgram(name)
+    if (source === undefined) throw new TIError('ERR:UNDEFINED', `prgm${name} was not found`)
+    const compiled = compileProgram(source)
+    this.cache.set(name, compiled)
+    return compiled
+  }
+
+  // --- Expressions -----------------------------------------------------
+
+  evalExpr(expr: Expr): Value {
+    switch (expr.type) {
+      case 'Number':
+        return num(expr.value)
+      case 'String':
+        return str(expr.value)
+      case 'Var':
+        return num(this.state.vars[expr.name] ?? 0)
+      case 'List':
+        return list([...(this.state.lists[expr.name] ?? [])])
+      case 'ListElement': {
+        const arr = this.state.lists[expr.name] ?? []
+        const idx = Math.round(requireNumber(this.evalExpr(expr.index), 'a list index'))
+        if (idx < 1 || idx > arr.length) {
+          throw new TIError('ERR:INVALID DIM', `${expr.name}(${idx}) is out of range`)
+        }
+        return num(arr[idx - 1])
+      }
+      case 'StrVar':
+        return str(this.state.strVars[expr.name] ?? '')
+      case 'Ans':
+        return this.state.ans
+      case 'Pi':
+        return num(Math.PI)
+      case 'Euler':
+        return num(Math.E)
+      case 'Unary':
+        return mapNumeric(this.evalExpr(expr.operand), (x) => -x)
+      case 'Binary': {
+        const l = this.evalExpr(expr.left)
+        const r = this.evalExpr(expr.right)
+        return this.evalBinary(expr.op, l, r)
+      }
+      case 'Postfix':
+        return this.evalPostfix(expr.op, expr.operand)
+      case 'Call':
+        return this.evalCall(expr.name, expr.args)
+    }
+  }
+
+  private evalBinary(op: BinaryOp, l: Value, r: Value): Value {
+    switch (op) {
+      case '+':
+        if (l.kind === 'string' || r.kind === 'string') {
+          return str(requireString(l, 'a string') + requireString(r, 'a string'))
+        }
+        return broadcastNumeric(l, r, (a, b) => checkFinite(a + b))
+      case '-':
+        return broadcastNumeric(l, r, (a, b) => checkFinite(a - b))
+      case '*':
+        return broadcastNumeric(l, r, (a, b) => checkFinite(a * b))
+      case '/':
+        return broadcastNumeric(l, r, (a, b) => {
+          if (b === 0) throw new TIError('ERR:DIVIDE BY 0', 'Cannot divide by 0')
+          return checkFinite(a / b)
+        })
+      case '^':
+        return broadcastNumeric(l, r, (a, b) => checkFinite(Math.pow(a, b)))
+      case '=':
+      case '≠': {
+        if (l.kind === 'string' && r.kind === 'string') {
+          const eq = l.value === r.value
+          return num((op === '=' ? eq : !eq) ? 1 : 0)
+        }
+        return broadcastNumeric(l, r, (a, b) => (op === '=' ? (a === b ? 1 : 0) : a !== b ? 1 : 0))
+      }
+      case '<':
+        return broadcastNumeric(l, r, (a, b) => (a < b ? 1 : 0))
+      case '>':
+        return broadcastNumeric(l, r, (a, b) => (a > b ? 1 : 0))
+      case '≤':
+        return broadcastNumeric(l, r, (a, b) => (a <= b ? 1 : 0))
+      case '≥':
+        return broadcastNumeric(l, r, (a, b) => (a >= b ? 1 : 0))
+      case 'and':
+        return num(isTruthy(l) && isTruthy(r) ? 1 : 0)
+      case 'or':
+        return num(isTruthy(l) || isTruthy(r) ? 1 : 0)
+      case 'xor':
+        return num(isTruthy(l) !== isTruthy(r) ? 1 : 0)
+      case 'nCr':
+      case 'nPr': {
+        const n = Math.round(requireNumber(l, 'a number'))
+        const r2 = Math.round(requireNumber(r, 'a number'))
+        if (n < 0 || r2 < 0 || r2 > n) throw new TIError('ERR:DOMAIN', `${op} requires 0 ≤ r ≤ n`)
+        return num(op === 'nCr' ? factorial(n) / (factorial(r2) * factorial(n - r2)) : factorial(n) / factorial(n - r2))
+      }
+      default:
+        throw new TIError('ERR:SYNTAX', `Unsupported operator ${op}`)
+    }
+  }
+
+  private evalPostfix(op: '²' | '⁻¹' | '!', operand: Expr): Value {
+    const v = this.evalExpr(operand)
+    if (op === '²') return mapNumeric(v, (x) => checkFinite(x * x))
+    if (op === '⁻¹') {
+      return mapNumeric(v, (x) => {
+        if (x === 0) throw new TIError('ERR:DIVIDE BY 0', 'Cannot divide by 0')
+        return checkFinite(1 / x)
+      })
+    }
+    return mapNumeric(v, factorial)
+  }
+
+  private evalCall(name: string, argExprs: Expr[]): Value {
+    if (name === 'seq(') return this.evalSeq(argExprs)
+    const fn = BUILTINS[name]
+    if (!fn) throw new TIError('ERR:SYNTAX', `Unknown function ${name}`)
+    return fn(argExprs.map((a) => this.evalExpr(a)), this.builtinCtx())
+  }
+
+  private evalSeq(argExprs: Expr[]): Value {
+    if (argExprs.length < 4) throw new TIError('ERR:ARGUMENT', 'seq( requires expr,var,start,end[,step]')
+    const [exprArg, varArg, startArg, endArg, stepArg] = argExprs
+    if (varArg.type !== 'Var') throw new TIError('ERR:DATA TYPE', 'seq( second argument must be a variable')
+    const start = Math.round(requireNumber(this.evalExpr(startArg), 'a start value'))
+    const end = Math.round(requireNumber(this.evalExpr(endArg), 'an end value'))
+    const step = stepArg ? Math.round(requireNumber(this.evalExpr(stepArg), 'a step value')) : 1
+    if (step === 0) throw new TIError('ERR:DOMAIN', 'seq( step cannot be 0')
+    const results: number[] = []
+    for (let i = start; step > 0 ? i <= end : i >= end; i += step) {
+      this.state.vars[varArg.name] = i
+      results.push(requireNumber(this.evalExpr(exprArg), 'a numeric sequence value'))
+    }
+    return list(results)
+  }
+
+  private assignTo(target: StoreTarget, value: Value): void {
+    switch (target.type) {
+      case 'Var':
+        this.state.vars[target.name] = requireNumber(value, 'a number')
+        return
+      case 'StrVar':
+        this.state.strVars[target.name] = requireString(value, 'a string')
+        return
+      case 'List':
+        this.state.lists[target.name] = [...requireList(value, 'a list')]
+        return
+      case 'ListElement': {
+        const arr = this.state.lists[target.name] ?? (this.state.lists[target.name] = [])
+        const idx = Math.round(requireNumber(this.evalExpr(target.index), 'a list index'))
+        const n = requireNumber(value, 'a number')
+        if (idx < 1 || idx > arr.length + 1) {
+          throw new TIError('ERR:INVALID DIM', `${target.name}(${idx}) is out of range`)
+        }
+        arr[idx - 1] = n
+        return
+      }
+    }
+  }
+
+  private parseInputText(text: string): Value {
+    const { program, diagnostics } = parse(text)
+    const first = program.instructions[0]?.stmt
+    if (diagnostics.length > 0 || program.instructions.length !== 1 || !first || first.kind !== 'Expr') {
+      throw new TIError('ERR:SYNTAX', 'Invalid entry')
+    }
+    return this.evalExpr(first.expr)
+  }
+
+  // --- Statements --------------------------------------------------------
+
+  private *execStatement(
+    instr: Instruction,
+    index: number,
+    linkInfo: LinkInfo | undefined,
+    frame: Frame,
+  ): Generator<RunEvent, StmtResult, ResumeValue> {
+    const stmt = instr.stmt
+    switch (stmt.kind) {
+      case 'Expr': {
+        this.state.ans = this.evalExpr(stmt.expr)
+        return { kind: 'next' }
+      }
+      case 'Store': {
+        const v = this.evalExpr(stmt.expr)
+        this.assignTo(stmt.target, v)
+        this.state.ans = v
+        return { kind: 'next' }
+      }
+      case 'If': {
+        const truthy = isTruthy(this.evalExpr(stmt.cond))
+        if (stmt.blockMode) {
+          if (truthy) return { kind: 'next' }
+          const l = linkInfo?.kind === 'if-block' ? linkInfo : undefined
+          const target = l ? (l.elseIndex !== null ? l.elseIndex + 1 : l.endIndex + 1) : index + 1
+          return { kind: 'jump', index: target }
+        }
+        if (truthy) return { kind: 'next' }
+        const l = linkInfo?.kind === 'if-single' ? linkInfo : undefined
+        return { kind: 'jump', index: l ? l.skipIndex : index + 1 }
+      }
+      case 'Else': {
+        const l = linkInfo?.kind === 'else' ? linkInfo : undefined
+        return { kind: 'jump', index: l ? l.endIndex + 1 : index + 1 }
+      }
+      case 'End': {
+        const l = linkInfo?.kind === 'end' ? linkInfo : undefined
+        if (!l) return { kind: 'next' }
+        if (l.partnerKind === 'if-block') return { kind: 'next' }
+        if (l.partnerKind === 'for') {
+          const loop = frame.loopState.get(l.partnerIndex)
+          if (!loop) return { kind: 'next' }
+          this.state.vars[loop.varName] = this.state.vars[loop.varName] + loop.step
+          const cur = this.state.vars[loop.varName]
+          const cont = loop.step >= 0 ? cur <= loop.end : cur >= loop.end
+          if (cont) return { kind: 'jump', index: l.partnerIndex + 1 }
+          frame.loopState.delete(l.partnerIndex)
+          return { kind: 'next' }
+        }
+        if (l.partnerKind === 'while') return { kind: 'jump', index: l.partnerIndex }
+        // repeat: condition is checked here, at the End.
+        const repeatStmt = frame.compiled.linked.program.instructions[l.partnerIndex].stmt as Extract<Stmt, { kind: 'Repeat' }>
+        if (isTruthy(this.evalExpr(repeatStmt.cond))) return { kind: 'next' }
+        return { kind: 'jump', index: l.partnerIndex + 1 }
+      }
+      case 'For': {
+        const startV = requireNumber(this.evalExpr(stmt.start), 'a start value')
+        const endV = requireNumber(this.evalExpr(stmt.end), 'an end value')
+        const stepV = stmt.step ? requireNumber(this.evalExpr(stmt.step), 'a step value') : 1
+        this.state.vars[stmt.varName] = startV
+        const cont = stepV >= 0 ? startV <= endV : startV >= endV
+        const l = linkInfo?.kind === 'for' ? linkInfo : undefined
+        if (!cont) return { kind: 'jump', index: l ? l.endIndex + 1 : index + 1 }
+        frame.loopState.set(index, { varName: stmt.varName, end: endV, step: stepV })
+        return { kind: 'next' }
+      }
+      case 'While': {
+        if (isTruthy(this.evalExpr(stmt.cond))) return { kind: 'next' }
+        const l = linkInfo?.kind === 'while' ? linkInfo : undefined
+        return { kind: 'jump', index: l ? l.endIndex + 1 : index + 1 }
+      }
+      case 'Repeat':
+        return { kind: 'next' }
+      case 'Lbl':
+        return { kind: 'next' }
+      case 'Goto': {
+        const target = frame.compiled.linked.labels.get(stmt.name)
+        if (target === undefined) throw new TIError('ERR:LABEL', `Lbl ${stmt.name} not found`)
+        return { kind: 'jump', index: target }
+      }
+      case 'IsGt': {
+        this.state.vars[stmt.varName] = (this.state.vars[stmt.varName] ?? 0) + 1
+        const cmp = requireNumber(this.evalExpr(stmt.value), 'a comparison value')
+        if (this.state.vars[stmt.varName] > cmp) return { kind: 'jump', index: index + 2 }
+        return { kind: 'next' }
+      }
+      case 'DsLt': {
+        this.state.vars[stmt.varName] = (this.state.vars[stmt.varName] ?? 0) - 1
+        const cmp = requireNumber(this.evalExpr(stmt.value), 'a comparison value')
+        if (this.state.vars[stmt.varName] < cmp) return { kind: 'jump', index: index + 2 }
+        return { kind: 'next' }
+      }
+      case 'Menu': {
+        const title = requireString(this.evalExpr(stmt.title), 'a title string')
+        const options = stmt.options.map((o) => ({
+          text: requireString(this.evalExpr(o.text), 'an option string'),
+          label: o.label,
+        }))
+        const choice = yield { type: 'menu', title, options }
+        const idx = typeof choice === 'number' ? choice : 1
+        const clamped = Math.min(Math.max(Math.round(idx), 1), options.length)
+        const target = frame.compiled.linked.labels.get(options[clamped - 1].label)
+        if (target === undefined) throw new TIError('ERR:LABEL', `Lbl ${options[clamped - 1].label} not found`)
+        return { kind: 'jump', index: target }
+      }
+      case 'Return':
+        return { kind: 'return' }
+      case 'Stop':
+        return { kind: 'stop' }
+      case 'Pause': {
+        if (stmt.value) this.dispValue(this.evalExpr(stmt.value))
+        yield { type: 'pause' }
+        return { kind: 'next' }
+      }
+      case 'Disp': {
+        if (stmt.values.length === 0) {
+          dispLine(this.state.screen, '')
+        } else {
+          for (const e of stmt.values) this.dispValue(this.evalExpr(e))
+        }
+        yield { type: 'tick' }
+        return { kind: 'next' }
+      }
+      case 'Output': {
+        const row = Math.round(requireNumber(this.evalExpr(stmt.row), 'a row'))
+        const col = Math.round(requireNumber(this.evalExpr(stmt.col), 'a column'))
+        if (row < 1 || row > SCREEN_ROWS || col < 1 || col > SCREEN_COLS) {
+          throw new TIError('ERR:DOMAIN', `Output( row/col must be within 1-${SCREEN_ROWS} / 1-${SCREEN_COLS}`)
+        }
+        writeAt(this.state.screen, row, col, formatValue(this.evalExpr(stmt.value)))
+        yield { type: 'tick' }
+        return { kind: 'next' }
+      }
+      case 'Input': {
+        const text = yield { type: 'input', prompt: stmt.target ? stmt.prompt : null }
+        const v = this.parseInputText(String(text ?? ''))
+        if (stmt.target) this.assignTo(stmt.target, v)
+        this.state.ans = v
+        return { kind: 'next' }
+      }
+      case 'Prompt': {
+        for (const target of stmt.targets) {
+          const text = yield { type: 'input', prompt: `${target.name}=?` }
+          this.assignTo(target, this.parseInputText(String(text ?? '')))
+        }
+        return { kind: 'next' }
+      }
+      case 'ClrHome': {
+        clearScreen(this.state.screen)
+        yield { type: 'tick' }
+        return { kind: 'next' }
+      }
+      case 'DelVar': {
+        const t = stmt.target
+        if (t.type === 'Var') this.state.vars[t.name] = 0
+        else if (t.type === 'StrVar') this.state.strVars[t.name] = ''
+        else if (t.type === 'List') this.state.lists[t.name] = []
+        else throw new TIError('ERR:DATA TYPE', 'DelVar requires a variable, list, or Str, not a list element')
+        return { kind: 'next' }
+      }
+      case 'PrgmCall':
+        return { kind: 'call', name: stmt.name }
+      case 'SetAngleMode':
+        this.state.angleMode = stmt.mode
+        return { kind: 'next' }
+    }
+  }
+
+  // --- Main loop -----------------------------------------------------
+
+  *run(entry: CompiledProgram): Generator<RunEvent, void, ResumeValue> {
+    const frames: Frame[] = [{ compiled: entry, ip: 0, loopState: new Map() }]
+    let lastBareExprAtTop: Value | null = null
+
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1]
+      const instrs = frame.compiled.linked.program.instructions
+      if (frame.ip >= instrs.length) {
+        frames.pop()
+        continue
+      }
+
+      this.steps++
+      if (this.steps > MAX_STEPS) {
+        yield {
+          type: 'error',
+          error: new TIError('ERR:MEMORY', 'Program exceeded the execution safety limit (possible infinite loop)'),
+        }
+        return
+      }
+
+      const instr = instrs[frame.ip]
+      const linkInfo = frame.compiled.linked.links.get(frame.ip)
+      const isTop = frames.length === 1
+      if (isTop && instr.stmt.kind !== 'Expr') lastBareExprAtTop = null
+
+      let result: StmtResult
+      try {
+        result = yield* this.execStatement(instr, frame.ip, linkInfo, frame)
+      } catch (err) {
+        if (err instanceof TIError) {
+          const withLine = err.line !== undefined ? err : new TIError(err.code as TIErrorCode, err.message, instr.line)
+          yield { type: 'error', error: withLine }
+          return
+        }
+        throw err
+      }
+
+      if (isTop && instr.stmt.kind === 'Expr') lastBareExprAtTop = this.state.ans
+
+      switch (result.kind) {
+        case 'next':
+          frame.ip += 1
+          break
+        case 'jump':
+          frame.ip = result.index
+          break
+        case 'call': {
+          frame.ip += 1
+          let compiledSub: CompiledProgram
+          try {
+            compiledSub = this.resolveCompiled(result.name)
+          } catch (err) {
+            if (err instanceof TIError) {
+              yield { type: 'error', error: new TIError(err.code, err.message, instr.line) }
+              return
+            }
+            throw err
+          }
+          if (compiledSub.diagnostics.length > 0) {
+            yield {
+              type: 'error',
+              error: new TIError('ERR:SYNTAX', `prgm${result.name} has a syntax error and cannot run`, instr.line),
+            }
+            return
+          }
+          if (frames.length >= MAX_CALL_DEPTH) {
+            yield { type: 'error', error: new TIError('ERR:MEMORY', 'Too many nested program calls', instr.line) }
+            return
+          }
+          frames.push({ compiled: compiledSub, ip: 0, loopState: new Map() })
+          break
+        }
+        case 'return':
+          frames.pop()
+          break
+        case 'stop':
+          frames.length = 0
+          break
+      }
+
+      if (this.steps % 20000 === 0) yield { type: 'tick' }
+    }
+
+    if (lastBareExprAtTop !== null) {
+      this.dispValue(lastBareExprAtTop)
+      yield { type: 'tick' }
+    }
+    yield { type: 'done' }
+  }
+}
+
+/**
+ * Runs a compiled program to completion, pausing (via `yield`) whenever it
+ * needs input, a menu choice, or an [ENTER] to continue. Drive it with a
+ * loop that calls `.next(resumeValue)`; see `RunEvent` for what each event
+ * expects back.
+ */
+export function runProgram(
+  entry: CompiledProgram,
+  state: InterpreterState,
+  resolveProgram: ProgramResolver,
+): Generator<RunEvent, void, ResumeValue> {
+  return new Runner(state, resolveProgram).run(entry)
+}
