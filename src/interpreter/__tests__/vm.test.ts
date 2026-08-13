@@ -891,3 +891,248 @@ describe('vm: complex numbers', () => {
 function formatExpectedRounded(n: number): string {
   return String(Number(n.toPrecision(10)))
 }
+
+describe('vm: list/string utilities and user-named lists', () => {
+  it('SortA( sorts a list ascending in place', () => {
+    const r = run('{3,1,2}->L1\nSortA(L1)\nDisp L1')
+    expect(r.error).toBeNull()
+    expect(r.state.lists.L1).toEqual([1, 2, 3])
+  })
+
+  it('SortD( sorts a list descending in place', () => {
+    const r = run('{3,1,2}->L1\nSortD(L1)')
+    expect(r.error).toBeNull()
+    expect(r.state.lists.L1).toEqual([3, 2, 1])
+  })
+
+  it('SortA( with multiple lists keeps paired data aligned', () => {
+    const r = run('{3,1,2}->L1\n{30,10,20}->L3\nSortA(L1,L3)')
+    expect(r.error).toBeNull()
+    expect(r.state.lists.L1).toEqual([1, 2, 3])
+    expect(r.state.lists.L3).toEqual([10, 20, 30])
+  })
+
+  it('ClrList clears one or more lists', () => {
+    const r = run('{1,2,3}->L1\n{4,5}->L2\nClrList L1,L2')
+    expect(r.error).toBeNull()
+    expect(r.state.lists.L1).toEqual([])
+    expect(r.state.lists.L2).toEqual([])
+  })
+
+  it('cumSum( returns running totals', () => {
+    const r = run('Disp cumSum({1,2,3,4})')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('{1 3 6 10}')
+  })
+
+  it('ΔList( returns successive differences', () => {
+    const r = run('Disp ΔList({1,3,6,10})')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('{2 3 4}')
+  })
+
+  it('inString( finds a substring position, 0 if absent', () => {
+    expect(run('Disp inString("TI-BASIC","BASIC")').screenText.split('\n')[0]).toBe('4')
+    expect(run('Disp inString("TI-BASIC","I")').screenText.split('\n')[0]).toBe('2')
+    expect(run('Disp inString("TI-BASIC","ELEPHANT")').screenText.split('\n')[0]).toBe('0')
+    expect(run('Disp inString("TI-BASIC","I",3)').screenText.split('\n')[0]).toBe('7')
+  })
+
+  it('stores into and reads back a user-named list via ∟NAME', () => {
+    const r = run('{5,10,15}->∟DATA\nDisp ∟DATA\nDisp sum(∟DATA)')
+    expect(r.error).toBeNull()
+    expect(r.state.lists.DATA).toEqual([5, 10, 15])
+    const lines = r.screenText.split('\n')
+    expect(lines[0]).toBe('{5 10 15}')
+    expect(lines[1]).toBe('30')
+  })
+
+  it('resizes a user-named list with dim( just like L1-L6', () => {
+    const r = run('{3}->dim(∟DATA)\nDisp dim(∟DATA)')
+    expect(r.error).toBeNull()
+    expect(r.state.lists.DATA).toEqual([0, 0, 0])
+  })
+})
+
+describe('vm: additional regression types', () => {
+  it('fits an exact quadratic with QuadReg', () => {
+    // y = 2x² - 3x + 1
+    const r = run('{0,1,2,3}->L1\n{1,0,3,10}->L2\nQuadReg')
+    expect(r.error).toBeNull()
+    expect(r.state.vars.a).toBeCloseTo(2)
+    expect(r.state.vars.b).toBeCloseTo(-3)
+    expect(r.state.vars.c).toBeCloseTo(1)
+    expect(r.state.vars['R²']).toBeCloseTo(1)
+  })
+
+  it('fits an exact cubic with CubicReg', () => {
+    // y = x³
+    const r = run('{-1,0,1,2}->L1\n{-1,0,1,8}->L2\nCubicReg')
+    expect(r.error).toBeNull()
+    expect(r.state.vars.a).toBeCloseTo(1)
+    expect(r.state.vars.b).toBeCloseTo(0)
+    expect(r.state.vars.c).toBeCloseTo(0)
+    expect(r.state.vars.d).toBeCloseTo(0)
+  })
+
+  it('fits an exact quartic with QuartReg, overwriting e (matching real hardware)', () => {
+    const r = run('42->e\n{-2,-1,0,1,2}->L1\n{16,1,0,1,16}->L2\nQuartReg')
+    expect(r.error).toBeNull()
+    expect(r.state.vars.a).toBeCloseTo(1)
+    expect(r.state.vars.b).toBeCloseTo(0)
+    expect(r.state.vars.c).toBeCloseTo(0)
+    expect(r.state.vars.d).toBeCloseTo(0)
+    expect(r.state.vars.e).toBeCloseTo(0)
+  })
+
+  it('defaults e to Euler\'s number until something overwrites it', () => {
+    const r = run('Disp round(e,6)')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('2.718282')
+  })
+
+  it('fits an exact logarithmic curve with LnReg', () => {
+    // y = 2 + 3*ln(x)
+    const xs = [1, 2, 5, 10]
+    const ys = xs.map((x) => 2 + 3 * Math.log(x))
+    const r = run(`{${xs.join(',')}}->L1\n{${ys.join(',')}}->L2\nLnReg`)
+    expect(r.error).toBeNull()
+    expect(r.state.vars.a).toBeCloseTo(2)
+    expect(r.state.vars.b).toBeCloseTo(3)
+    expect(r.state.vars.r).toBeCloseTo(1)
+  })
+
+  it('fits an exact exponential curve with ExpReg', () => {
+    // y = 5 * 2^x
+    const xs = [0, 1, 2, 3]
+    const ys = xs.map((x) => 5 * Math.pow(2, x))
+    const r = run(`{${xs.join(',')}}->L1\n{${ys.join(',')}}->L2\nExpReg`)
+    expect(r.error).toBeNull()
+    expect(r.state.vars.a).toBeCloseTo(5)
+    expect(r.state.vars.b).toBeCloseTo(2)
+  })
+
+  it('fits an exact power curve with PwrReg', () => {
+    // y = 4 * x^1.5
+    const xs = [1, 2, 4, 8]
+    const ys = xs.map((x) => 4 * Math.pow(x, 1.5))
+    const r = run(`{${xs.join(',')}}->L1\n{${ys.join(',')}}->L2\nPwrReg`)
+    expect(r.error).toBeNull()
+    expect(r.state.vars.a).toBeCloseTo(4)
+    expect(r.state.vars.b).toBeCloseTo(1.5)
+  })
+
+  it('LinReg(a+bx) fits the same line as LinReg(ax+b) with a/b swapped', () => {
+    const r = run('{1,2,3}->L1\n{2,4,6}->L2\nLinReg(a+bx)')
+    expect(r.error).toBeNull()
+    expect(r.state.vars.a).toBeCloseTo(0)
+    expect(r.state.vars.b).toBeCloseTo(2)
+  })
+})
+
+describe('vm: calculus tools', () => {
+  it('nDeriv( approximates the derivative of X² at X=3 as 6', () => {
+    const r = run('Disp round(nDeriv(X²,X,3),6)')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('6')
+  })
+
+  it('fnInt( approximates the integral of X² from 0 to 3 as 9', () => {
+    const r = run('Disp round(fnInt(X²,X,0,3),6)')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('9')
+  })
+
+  it('fMin( finds the minimum of X² near 0', () => {
+    const r = run('Disp round(fMin(X²,X,-5,5),4)')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('0')
+  })
+
+  it('fMax( finds the maximum of -X²+4 near 0', () => {
+    const r = run('Disp round(fMax(-X²+4,X,-5,5),4)')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('0')
+  })
+
+  it('solve( finds a root of X²-4 from a guess', () => {
+    const r = run('Disp round(solve(X²-4,X,1),6)')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('2')
+  })
+
+  it('solve( finds a root of X²-4 within bounds', () => {
+    const r = run('Disp round(solve(X²-4,X,0,{-5,0}),6)')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('-2')
+  })
+
+  it('rejects solve( bounds that do not bracket a sign change', () => {
+    const r = run('solve(X²+4,X,0,{-5,5})')
+    expect(r.error?.code).toBe('ERR:DOMAIN')
+  })
+})
+
+describe('vm: stat plots', () => {
+  it('Plot1( defines and enables a scatter plot that DispGraph renders', () => {
+    const r = run('{0,5}->L1\n{0,5}->L2\nPlot1(Scatter,L1,L2)\nDispGraph')
+    expect(r.error).toBeNull()
+    expect(r.state.plots[0].enabled).toBe(true)
+    expect(r.state.plots[0].plotType).toBe('scatter')
+    // A point should be plotted somewhere near the (5,5) corner of the default window.
+    expect(r.state.graphScreen.pixels.some((row) => row.some((p) => p))).toBe(true)
+  })
+
+  it('PlotsOff disables a previously-enabled plot without losing its configuration', () => {
+    const r = run('{1,2}->L1\n{1,2}->L2\nPlot1(Scatter,L1,L2)\nPlotsOff 1')
+    expect(r.error).toBeNull()
+    expect(r.state.plots[0].enabled).toBe(false)
+    expect(r.state.plots[0].xList).toBe('L1')
+  })
+
+  it('PlotsOn with no arguments enables all three plots', () => {
+    const r = run('PlotsOn')
+    expect(r.error).toBeNull()
+    expect(r.state.plots.every((p) => p.enabled)).toBe(true)
+  })
+
+  it('Plot1(Histogram, and Plot1(Boxplot, accept a bare Xlist', () => {
+    const r = run('{1,2,2,3,3,3}->L1\nPlot1(Histogram,L1)\nPlot2(Boxplot,L1)')
+    expect(r.error).toBeNull()
+    expect(r.state.plots[0].plotType).toBe('histogram')
+    expect(r.state.plots[0].yList).toBeNull()
+    expect(r.state.plots[1].plotType).toBe('boxplot')
+  })
+})
+
+describe('vm: Shade( and graph screen extras', () => {
+  it('Pt-On(/pxl-Test( round-trip through graph coordinates', () => {
+    const r = run('Pt-On(0,0)\nDisp pxl-Test(31,47)')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('1')
+  })
+
+  it('Pt-Off( turns a point back off', () => {
+    const r = run('Pt-On(0,0)\nPt-Off(0,0)\nDisp pxl-Test(31,47)')
+    expect(r.screenText.split('\n')[0]).toBe('0')
+  })
+
+  it('Horizontal and Vertical draw full-width/height lines', () => {
+    const r = run('Horizontal 0\nVertical 0')
+    expect(r.error).toBeNull()
+    expect(r.state.graphScreen.pixels[31][0]).toBe(true)
+    expect(r.state.graphScreen.pixels[31][94]).toBe(true)
+    expect(r.state.graphScreen.pixels[0][47]).toBe(true)
+    expect(r.state.graphScreen.pixels[62][47]).toBe(true)
+  })
+
+  it('Shade( shades the region between two constant functions', () => {
+    const r = run('Shade(-1,1)')
+    expect(r.error).toBeNull()
+    // The center column (x=0) should have shaded pixels between y=-1 and y=1.
+    const g = r.state.graphScreen
+    let anyShaded = false
+    for (let row = 0; row < 63; row++) if (g.pixels[row][47]) anyShaded = true
+    expect(anyShaded).toBe(true)
+  })
+})

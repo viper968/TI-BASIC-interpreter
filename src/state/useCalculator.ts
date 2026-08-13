@@ -10,6 +10,7 @@ import {
   TIError,
   compileProgram,
   createInterpreterState,
+  evalYVarAt as evalYVarAtState,
   runProgram,
 } from '../interpreter'
 
@@ -48,12 +49,13 @@ export function useCalculator() {
   const [complexMode, setComplexMode] = useState<'real' | 'rect' | 'polar'>('real')
 
   const genRef = useRef<Generator<RunEvent, void, ResumeValue> | null>(null)
-  const vmStateRef = useRef<InterpreterState | null>(null)
+  // Always holds a real state (even before any program has run), so GUI-only
+  // features like the Graph tab's trace cursor always have something to read.
+  const vmStateRef = useRef<InterpreterState>(createInterpreterState())
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const syncFromState = useCallback(() => {
     const s = vmStateRef.current
-    if (!s) return
     setScreenRows([...s.screen.rows])
     setVars({ ...s.vars })
     setStrVars({ ...s.strVars })
@@ -172,6 +174,11 @@ export function useCalculator() {
     [pump],
   )
 
+  /** For the Graph tab's trace cursor: evaluates a Y-variable at x against the last-run (or default) state. */
+  const evalYVarAt = useCallback((name: string, x: number): number | null => {
+    return evalYVarAtState(vmStateRef.current, name, x)
+  }, [])
+
   return {
     screenRows,
     status,
@@ -188,5 +195,6 @@ export function useCalculator() {
     runSource,
     resume,
     stop,
+    evalYVarAt,
   }
 }

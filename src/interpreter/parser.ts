@@ -31,7 +31,36 @@ const STATEMENT_ONLY_KEYWORDS = new Set([
   'Pxl-On(',
   'Pxl-Off(',
   'Pxl-Change(',
+  'SortA(',
+  'SortD(',
+  'ClrList',
+  'QuadReg',
+  'CubicReg',
+  'QuartReg',
+  'LnReg',
+  'ExpReg',
+  'PwrReg',
+  'LinReg(a+bx)',
+  'Plot1(',
+  'Plot2(',
+  'Plot3(',
+  'PlotsOn',
+  'PlotsOff',
+  'Shade(',
+  'Pt-On(',
+  'Pt-Off(',
+  'Pt-Change(',
+  'Horizontal',
+  'Vertical',
 ])
+
+/** Plot1(/Plot2(/Plot3( type keywords, mapped to the internal plot-type tag. */
+const PLOT_TYPES: Record<string, 'scatter' | 'xyline' | 'histogram' | 'boxplot'> = {
+  Scatter: 'scatter',
+  xyLine: 'xyline',
+  Histogram: 'histogram',
+  Boxplot: 'boxplot',
+}
 
 /** Tokens that legitimately end a statement. */
 function isStmtEnd(tok: Token): boolean {
@@ -215,6 +244,58 @@ class Parser {
           return this.parsePxl('PxlOff')
         case 'Pxl-Change(':
           return this.parsePxl('PxlChange')
+        case 'SortA(':
+          return this.parseSortList('asc')
+        case 'SortD(':
+          return this.parseSortList('desc')
+        case 'ClrList':
+          this.advance()
+          return { kind: 'ClrList', lists: this.parseListNameSeries() }
+        case 'QuadReg':
+          this.advance()
+          return { kind: 'PolyReg', degree: 2, ...this.parseXYFreqTail() }
+        case 'CubicReg':
+          this.advance()
+          return { kind: 'PolyReg', degree: 3, ...this.parseXYFreqTail() }
+        case 'QuartReg':
+          this.advance()
+          return { kind: 'PolyReg', degree: 4, ...this.parseXYFreqTail() }
+        case 'LnReg':
+          this.advance()
+          return { kind: 'LnReg', ...this.parseXYFreqTail() }
+        case 'ExpReg':
+          this.advance()
+          return { kind: 'ExpReg', ...this.parseXYFreqTail() }
+        case 'PwrReg':
+          this.advance()
+          return { kind: 'PwrReg', ...this.parseXYFreqTail() }
+        case 'LinReg(a+bx)':
+          this.advance()
+          return { kind: 'LinRegAbx', ...this.parseXYFreqTail() }
+        case 'Plot1(':
+          return this.parsePlotDef(1)
+        case 'Plot2(':
+          return this.parsePlotDef(2)
+        case 'Plot3(':
+          return this.parsePlotDef(3)
+        case 'PlotsOn':
+          return this.parsePlotsEnabled(true)
+        case 'PlotsOff':
+          return this.parsePlotsEnabled(false)
+        case 'Shade(':
+          return this.parseShade()
+        case 'Pt-On(':
+          return this.parsePt('PtOn')
+        case 'Pt-Off(':
+          return this.parsePt('PtOff')
+        case 'Pt-Change(':
+          return this.parsePt('PtChange')
+        case 'Horizontal':
+          this.advance()
+          return { kind: 'Horizontal', y: this.parseExpr() }
+        case 'Vertical':
+          this.advance()
+          return { kind: 'Vertical', x: this.parseExpr() }
         default:
           break
       }
@@ -403,7 +484,12 @@ class Parser {
 
   private parseLinReg(): Stmt {
     this.advance() // LinReg(ax+b)
-    if (isStmtEnd(this.current())) return { kind: 'LinReg', xList: 'L1', yList: 'L2', freqList: null }
+    return { kind: 'LinReg', ...this.parseXYFreqTail() }
+  }
+
+  /** The "[Xlist,Ylist[,Freqlist]]" tail shared by every STAT CALC regression command. */
+  private parseXYFreqTail(): { xList: string; yList: string; freqList: string | null } {
+    if (isStmtEnd(this.current())) return { xList: 'L1', yList: 'L2', freqList: null }
     const xList = this.expect('LIST', 'a list (L1-L6)').text
     this.expect('COMMA', '","')
     const yList = this.expect('LIST', 'a list (L1-L6)').text
@@ -412,7 +498,95 @@ class Parser {
       this.advance()
       freqList = this.expect('LIST', 'a list (L1-L6)').text
     }
-    return { kind: 'LinReg', xList, yList, freqList }
+    return { xList, yList, freqList }
+  }
+
+  private parseSortList(mode: 'asc' | 'desc'): Stmt {
+    this.advance() // SortA( or SortD(
+    const lists = this.parseListNameSeries()
+    this.expect('RPAREN', '")"')
+    return { kind: 'SortList', mode, lists }
+  }
+
+  /** One or more comma-separated list names, e.g. for SortA(/ClrList. */
+  private parseListNameSeries(): string[] {
+    const names = [this.expect('LIST', 'a list (L1-L6 or ∟NAME)').text]
+    while (this.current().type === 'COMMA') {
+      this.advance()
+      names.push(this.expect('LIST', 'a list (L1-L6 or ∟NAME)').text)
+    }
+    return names
+  }
+
+  private parsePlotDef(plot: 1 | 2 | 3): Stmt {
+    this.advance() // Plot1(/Plot2(/Plot3(
+    const typeTok = this.current()
+    if (typeTok.type !== 'KEYWORD' || !(typeTok.text in PLOT_TYPES)) {
+      this.error('Expected a plot type (Scatter, xyLine, Histogram, or Boxplot)', typeTok)
+    }
+    const plotType = PLOT_TYPES[typeTok.text]
+    this.advance()
+    this.expect('COMMA', '","')
+    const xList = this.expect('LIST', 'a list (L1-L6)').text
+    let yList: string | null = null
+    let freqList: string | null = null
+    if (plotType === 'scatter' || plotType === 'xyline') {
+      this.expect('COMMA', '","')
+      yList = this.expect('LIST', 'a list (L1-L6)').text
+    } else if (this.current().type === 'COMMA') {
+      this.advance()
+      freqList = this.expect('LIST', 'a list (L1-L6)').text
+    }
+    this.expect('RPAREN', '")"')
+    return { kind: 'DefinePlot', plot, plotType, xList, yList, freqList }
+  }
+
+  private parsePlotsEnabled(enabled: boolean): Stmt {
+    this.advance() // PlotsOn / PlotsOff
+    const plots: (1 | 2 | 3)[] = []
+    if (!isStmtEnd(this.current())) {
+      plots.push(this.parsePlotNumber())
+      while (this.current().type === 'COMMA') {
+        this.advance()
+        plots.push(this.parsePlotNumber())
+      }
+    }
+    return { kind: 'SetPlotsEnabled', plots: plots.length > 0 ? plots : [1, 2, 3], enabled }
+  }
+
+  private parsePlotNumber(): 1 | 2 | 3 {
+    const tok = this.current()
+    if (tok.type === 'NUMBER' && (tok.text === '1' || tok.text === '2' || tok.text === '3')) {
+      this.advance()
+      return Number(tok.text) as 1 | 2 | 3
+    }
+    this.error('Expected a plot number (1, 2, or 3)', tok)
+  }
+
+  private parseShade(): Stmt {
+    this.advance() // Shade(
+    const lower = this.parseExpr()
+    this.expect('COMMA', '","')
+    const upper = this.parseExpr()
+    let xLeft: Expr | null = null
+    let xRight: Expr | null = null
+    if (this.current().type === 'COMMA') {
+      this.advance()
+      xLeft = this.parseExpr()
+      this.expect('COMMA', '","')
+      xRight = this.parseExpr()
+    }
+    this.expect('RPAREN', '")"')
+    return { kind: 'Shade', lower, upper, xLeft, xRight }
+  }
+
+  private parsePt(kind: 'PtOn' | 'PtOff' | 'PtChange'): Stmt {
+    this.advance() // Pt-On( / Pt-Off( / Pt-Change(
+    const x = this.parseExpr()
+    this.expect('COMMA', '","')
+    const y = this.parseExpr()
+    this.expect('RPAREN', '")"')
+    return { kind, x, y }
   }
 
   private parseLine(): Stmt {
@@ -604,7 +778,7 @@ class Parser {
 
   private canStartImplicitFactor(tok: Token): boolean {
     if (tok.type === 'NUMBER' || tok.type === 'VAR' || tok.type === 'LIST' || tok.type === 'STRVAR') return true
-    if (tok.type === 'ANS' || tok.type === 'PI' || tok.type === 'EULER' || tok.type === 'LPAREN') return true
+    if (tok.type === 'ANS' || tok.type === 'PI' || tok.type === 'LPAREN') return true
     if (tok.type === 'MATRIX' || tok.type === 'YVAR' || tok.type === 'IMAG') return true
     if (tok.type === 'KEYWORD' && tok.text.endsWith('(') && !STATEMENT_ONLY_KEYWORDS.has(tok.text)) return true
     return false
@@ -688,9 +862,6 @@ class Parser {
       case 'PI':
         this.advance()
         return { type: 'Pi' }
-      case 'EULER':
-        this.advance()
-        return { type: 'Euler' }
       case 'IMAG':
         this.advance()
         return { type: 'Imaginary' }

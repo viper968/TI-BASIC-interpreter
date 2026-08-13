@@ -9,7 +9,6 @@ export type TokenType =
   | 'YVAR' // Y0-Y9
   | 'ANS'
   | 'PI'
-  | 'EULER'
   | 'IMAG' // the imaginary unit i
   | 'KEYWORD' // command / keyword text, e.g. "For(", "Disp", "and"
   | 'PRGM' // the `prgm` prefix keyword itself

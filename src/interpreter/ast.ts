@@ -8,7 +8,6 @@ export type Expr =
   | { type: 'StrVar'; name: string } // Str0-Str9
   | { type: 'Ans' }
   | { type: 'Pi' }
-  | { type: 'Euler' }
   | { type: 'Unary'; op: '-'; operand: Expr }
   | { type: 'Binary'; op: BinaryOp; left: Expr; right: Expr }
   | { type: 'Postfix'; op: '²' | '⁻¹' | '!' | '►Frac' | '►Dec'; operand: Expr }
@@ -95,6 +94,22 @@ export type Stmt =
   | { kind: 'PxlOff'; row: Expr; col: Expr }
   | { kind: 'PxlChange'; row: Expr; col: Expr }
   | { kind: 'SetComplexMode'; mode: 'real' | 'rect' | 'polar' } // Real / a+bi / re^θi
+  | { kind: 'SortList'; mode: 'asc' | 'desc'; lists: string[] } // SortA(/SortD(
+  | { kind: 'ClrList'; lists: string[] }
+  /** QuadReg/CubicReg/QuartReg: y = a + bx + cx² [+ dx³ [+ ex⁴]]. */
+  | { kind: 'PolyReg'; degree: 2 | 3 | 4; xList: string; yList: string; freqList: string | null }
+  | { kind: 'LnReg'; xList: string; yList: string; freqList: string | null } // y = a + b*ln(x)
+  | { kind: 'ExpReg'; xList: string; yList: string; freqList: string | null } // y = a*b^x
+  | { kind: 'PwrReg'; xList: string; yList: string; freqList: string | null } // y = a*x^b
+  | { kind: 'LinRegAbx'; xList: string; yList: string; freqList: string | null } // y = a + bx
+  | { kind: 'DefinePlot'; plot: 1 | 2 | 3; plotType: 'scatter' | 'xyline' | 'histogram' | 'boxplot'; xList: string; yList: string | null; freqList: string | null }
+  | { kind: 'SetPlotsEnabled'; plots: (1 | 2 | 3)[]; enabled: boolean } // PlotsOn/PlotsOff [1,2,3]
+  | { kind: 'Shade'; lower: Expr; upper: Expr; xLeft: Expr | null; xRight: Expr | null }
+  | { kind: 'PtOn'; x: Expr; y: Expr }
+  | { kind: 'PtOff'; x: Expr; y: Expr }
+  | { kind: 'PtChange'; x: Expr; y: Expr }
+  | { kind: 'Horizontal'; y: Expr }
+  | { kind: 'Vertical'; x: Expr }
 
 /** One instruction slot in the compiled, flat program. */
 export interface Instruction {

@@ -17,13 +17,14 @@ const EXCLUDED_FROM_KEYWORD_TABLE = new Set([
   'Ans', // ANS, has its own token type
   'prgm', // PRGM, has its own token type
   '10^(', // == NUMBER(10) CARET LPAREN, no special token needed
-  'e^(', // == EULER CARET LPAREN, no special token needed
+  'e^(', // == VAR("e") CARET LPAREN, no special token needed
   '*row(', // starts with '*', matched explicitly before the generic STAR check
   '*row+(', // ditto
   '1-Var Stats', // starts with a digit, matched explicitly before number lexing
   '2-Var Stats', // ditto
   'Y1', // doc-only entry representing the whole Y0-Y9 family; matched explicitly below
   'i', // the imaginary unit, has its own IMAG token type, added directly above
+  '∟', // doc-only entry representing the user-named-list prefix; matched explicitly below
 ])
 
 function buildKeywordTable(): KeywordEntry[] {
@@ -32,7 +33,6 @@ function buildKeywordTable(): KeywordEntry[] {
     { match: 'π', type: 'PI', text: 'π' },
     { match: 'Ans', type: 'ANS', text: 'Ans' },
     { match: 'prgm', type: 'PRGM', text: 'prgm' },
-    { match: 'e', type: 'EULER', text: 'e' },
     { match: 'i', type: 'IMAG', text: 'i' },
   ]
   for (const cmd of COMMANDS) {
@@ -326,7 +326,27 @@ export function tokenize(source: string): LexResult {
       continue
     }
 
-    if (/[A-Za-z]/.test(ch) || ch === 'θ' || ch === 'π' || ch === '√' || ch === '►' || ch === 'Σ' || ch === 'σ') {
+    if (ch === '∟') {
+      // ∟NAME: a user-named list (1 letter, then up to 4 more letters/digits),
+      // e.g. {1,2,3}->∟DATA. Reuses the LIST token type (and all of L1-L6's
+      // machinery) keyed by the name alone, without the ∟ prefix.
+      const m = /^[A-Za-z][A-Za-z0-9]{0,4}/.exec(source.slice(pos + 1))
+      if (!m) {
+        diagnostics.push({
+          code: 'ERR:SYNTAX',
+          message: 'Expected a list name (a letter, then up to 4 more letters/digits) after ∟',
+          line: startLine,
+          column: startCol,
+        })
+        advance(1)
+        continue
+      }
+      push('LIST', m[0], startLine, startCol)
+      advance(1 + m[0].length)
+      continue
+    }
+
+    if (/[A-Za-z]/.test(ch) || ch === 'θ' || ch === 'π' || ch === '√' || ch === '►' || ch === 'Σ' || ch === 'σ' || ch === 'Δ') {
       // Greedy keyword match: try the longest known command/keyword spelling
       // at this position before falling back to variable rules. This is what
       // lets "For(" be a single token while "AB" still lexes as two

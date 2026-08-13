@@ -1,4 +1,5 @@
 import { TIError } from './errors'
+import { rref } from './matrix'
 
 /**
  * Statistics math, kept independent of the `Value`/VM machinery (mirrors
@@ -127,6 +128,92 @@ export function linreg(xs: number[], ys: number[], weights?: number[]): LinRegRe
   const b = my - a * mx
   const r = syy === 0 ? (a === 0 ? 1 : 0) : sxy / Math.sqrt(sxx * syy)
   return { a, b, r }
+}
+
+// ---- Other regression types --------------------------------------------------
+
+export interface PolyRegResult {
+  /** Coefficients low-to-high degree: coeffs[0] is the constant term. */
+  coeffs: number[]
+  r2: number
+}
+
+/**
+ * Weighted least-squares polynomial fit y = coeffs[0] + coeffs[1]*x + ... +
+ * coeffs[degree]*x^degree (QuadReg/CubicReg/QuartReg), via the normal
+ * equations solved with the same Gauss-Jordan elimination matrix.ts already
+ * uses for rref( — reusing it here instead of writing a second linear solver.
+ */
+export function polyReg(xs: number[], ys: number[], degree: number, weights?: number[]): PolyRegResult {
+  const distinctX = new Set(xs).size
+  if (distinctX <= degree) {
+    throw new TIError('ERR:DOMAIN', `This regression needs more than ${degree} distinct x-values`)
+  }
+  const size = degree + 1
+  const normal: number[][] = Array.from({ length: size }, () => Array(size + 1).fill(0))
+  xs.forEach((x, k) => {
+    const w = weights ? weights[k] : 1
+    for (let i = 0; i < size; i++) {
+      for (let j = 0; j < size; j++) normal[i][j] += w * Math.pow(x, i + j)
+      normal[i][size] += w * Math.pow(x, i) * ys[k]
+    }
+  })
+  const solved = rref(normal)
+  const coeffs = solved.map((row) => row[size])
+  const my = mean(ys, weights)
+  let ssRes = 0
+  let ssTot = 0
+  xs.forEach((x, k) => {
+    const w = weights ? weights[k] : 1
+    const pred = coeffs.reduce((acc, c, i) => acc + c * Math.pow(x, i), 0)
+    ssRes += w * (ys[k] - pred) ** 2
+    ssTot += w * (ys[k] - my) ** 2
+  })
+  const r2 = ssTot === 0 ? 1 : 1 - ssRes / ssTot
+  return { coeffs, r2 }
+}
+
+/** Fits y=a+b·ln(x) by running linreg( on (ln(x),y) — a linear fit in transformed coordinates. */
+export function lnReg(xs: number[], ys: number[], weights?: number[]): LinRegResult {
+  if (xs.some((x) => x <= 0)) throw new TIError('ERR:DOMAIN', 'LnReg requires all x-values to be positive')
+  const { a: slope, b: intercept, r } = linreg(
+    xs.map((x) => Math.log(x)),
+    ys,
+    weights,
+  )
+  return { a: intercept, b: slope, r }
+}
+
+/** Fits y=a·b^x by running linreg( on (x,ln(y)) — a linear fit in transformed coordinates. */
+export function expReg(xs: number[], ys: number[], weights?: number[]): LinRegResult {
+  if (ys.some((y) => y <= 0)) throw new TIError('ERR:DOMAIN', 'ExpReg requires all y-values to be positive')
+  const {
+    a: slope,
+    b: intercept,
+    r,
+  } = linreg(
+    xs,
+    ys.map((y) => Math.log(y)),
+    weights,
+  )
+  return { a: Math.exp(intercept), b: Math.exp(slope), r }
+}
+
+/** Fits y=a·x^b by running linreg( on (ln(x),ln(y)) — a linear fit in transformed coordinates. */
+export function pwrReg(xs: number[], ys: number[], weights?: number[]): LinRegResult {
+  if (xs.some((x) => x <= 0) || ys.some((y) => y <= 0)) {
+    throw new TIError('ERR:DOMAIN', 'PwrReg requires all x- and y-values to be positive')
+  }
+  const {
+    a: slope,
+    b: intercept,
+    r,
+  } = linreg(
+    xs.map((x) => Math.log(x)),
+    ys.map((y) => Math.log(y)),
+    weights,
+  )
+  return { a: Math.exp(intercept), b: slope, r }
 }
 
 // ---- Normal distribution ---------------------------------------------------

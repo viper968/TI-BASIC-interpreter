@@ -96,10 +96,15 @@ describe('lexer', () => {
     expect(diagnostics[0].message).toContain('~')
   })
 
-  it('tokenizes θ, π and e as their own constants', () => {
+  it('tokenizes θ and π as their own constants', () => {
     expect(types('θ')).toEqual(['VAR', 'EOF'])
     expect(types('π')).toEqual(['PI', 'EOF'])
-    expect(types('e')).toEqual(['EULER', 'EOF'])
+  })
+
+  it('tokenizes e (Euler\'s number) as an ordinary reserved variable, not a fixed constant', () => {
+    // Unlike π, e is just a variable that defaults to 2.718...: real
+    // hardware lets QuartReg's 5th coefficient overwrite it, and so do we.
+    expect(tokenize('e').tokens[0]).toMatchObject({ type: 'VAR', text: 'e' })
   })
 
   it('tokenizes [A]-[J] as a single MATRIX token', () => {
@@ -192,5 +197,24 @@ describe('lexer', () => {
     expect(tokenize('identity(').tokens[0]).toMatchObject({ type: 'KEYWORD', text: 'identity(' })
     expect(tokenize('invNorm(').tokens[0]).toMatchObject({ type: 'KEYWORD', text: 'invNorm(' })
     expect(tokenize('iPart(').tokens[0]).toMatchObject({ type: 'KEYWORD', text: 'iPart(' })
+  })
+
+  it('tokenizes ∟NAME as a single LIST token, keyed by the name without the ∟', () => {
+    expect(tokenize('∟DATA').tokens[0]).toMatchObject({ type: 'LIST', text: 'DATA' })
+    expect(tokenize('∟A').tokens[0]).toMatchObject({ type: 'LIST', text: 'A' })
+    // At most 5 characters total after ∟ (1 letter + up to 4 more).
+    expect(tokenize('∟ABCDEF').tokens[0]).toMatchObject({ type: 'LIST', text: 'ABCDE' })
+  })
+
+  it('flags ∟ with no valid name after it', () => {
+    const { diagnostics } = tokenize('∟9')
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0].message).toContain('∟')
+  })
+
+  it('tokenizes the stat-plot type keywords', () => {
+    for (const name of ['Scatter', 'xyLine', 'Histogram', 'Boxplot']) {
+      expect(tokenize(name).tokens[0]).toMatchObject({ type: 'KEYWORD', text: name })
+    }
   })
 })

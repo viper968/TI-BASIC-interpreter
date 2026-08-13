@@ -73,6 +73,19 @@ const LIST_NAMES = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6']
 const MATRIX_NAMES = [...'ABCDEFGHIJ']
 const YVAR_NAMES = Array.from({ length: 10 }, (_, i) => `Y${i}`)
 
+/** A Plot1(/Plot2(/Plot3( configuration, drawn onto the graph screen by DispGraph alongside the Y= functions. */
+export interface PlotConfig {
+  enabled: boolean
+  plotType: 'scatter' | 'xyline' | 'histogram' | 'boxplot'
+  xList: string
+  yList: string | null
+  freqList: string | null
+}
+
+function defaultPlotConfig(): PlotConfig {
+  return { enabled: false, plotType: 'scatter', xList: 'L1', yList: 'L2', freqList: null }
+}
+
 export interface InterpreterState {
   vars: Record<string, number>
   strVars: Record<string, string>
@@ -82,6 +95,8 @@ export interface InterpreterState {
   yVars: Record<string, string>
   /** The 95x63 graph pixel buffer drawn by DispGraph/ClrDraw/Line(/Circle(/Pxl-*. */
   graphScreen: GraphScreen
+  /** Plot1(/Plot2(/Plot3( configuration, indices 0-2. */
+  plots: [PlotConfig, PlotConfig, PlotConfig]
   ans: Value
   angleMode: AngleMode
   /** MODE screen: Normal/Sci/Eng notation. */
@@ -113,6 +128,10 @@ export function createInterpreterState(): InterpreterState {
   vars['Ymax'] = 10
   vars['Yscl'] = 1
   vars['Xres'] = 1
+  // Euler's number defaults here (it's just an ordinary variable), so e.g.
+  // QuartReg's 5th coefficient can genuinely overwrite it, matching a
+  // well-known real-hardware quirk.
+  vars['e'] = Math.E
   const strVars: Record<string, string> = {}
   for (const n of STR_VAR_NAMES) strVars[n] = ''
   const lists: Record<string, number[]> = {}
@@ -128,6 +147,7 @@ export function createInterpreterState(): InterpreterState {
     matrices,
     yVars,
     graphScreen: createGraphScreen(),
+    plots: [defaultPlotConfig(), defaultPlotConfig(), defaultPlotConfig()],
     ans: num(0),
     angleMode: 'degree',
     notation: 'normal',
@@ -295,8 +315,6 @@ class Runner {
         return this.state.ans
       case 'Pi':
         return num(Math.PI)
-      case 'Euler':
-        return num(Math.E)
       case 'Unary': {
         const v = this.evalExpr(expr.operand)
         if (v.kind === 'complex') return complex(-v.re, -v.im)
@@ -350,6 +368,19 @@ class Runner {
     return first.expr
   }
 
+  /**
+   * Evaluates a Y-variable's definition at x, outside of any running
+   * program. Not private: this is the one method GUI features (the Graph
+   * tab's trace cursor) call directly, for a one-off evaluation against a
+   * snapshot of interpreter state — see `evalYVarAt` below.
+   */
+  evalYVariable(name: string, x: number): number {
+    const def = this.state.yVars[name]
+    if (!def) throw new TIError('ERR:UNDEFINED', `${name} is not defined`)
+    this.setRealVar('X', x)
+    return requireNumber(this.evalExpr(this.parseYVarDef(name, def)), 'a number')
+  }
+
   /** The current graph window, read from the Xmin/Xmax/Ymin/Ymax variables. */
   private window(): Window {
     return {
@@ -357,6 +388,70 @@ class Runner {
       xMax: this.state.vars['Xmax'],
       yMin: this.state.vars['Ymin'],
       yMax: this.state.vars['Ymax'],
+    }
+  }
+
+  /**
+   * Draws every enabled Plot1(/Plot2(/Plot3( onto the graph screen, called
+   * by DispGraph after the Y= functions. No Mark-style selection (see
+   * README): Scatter/xyLine points always draw as a small 3x3 box.
+   */
+  private renderPlots(w: Window): void {
+    const g = this.state.graphScreen
+    for (const plot of this.state.plots) {
+      if (!plot.enabled) continue
+      const xs = this.state.lists[plot.xList] ?? []
+      if (xs.length === 0) continue
+      if (plot.plotType === 'scatter' || plot.plotType === 'xyline') {
+        const ys = plot.yList ? (this.state.lists[plot.yList] ?? []) : []
+        const n = Math.min(xs.length, ys.length)
+        let prevRow: number | null = null
+        let prevCol: number | null = null
+        for (let i = 0; i < n; i++) {
+          const row = yToRow(ys[i], w)
+          const col = xToCol(xs[i], w)
+          for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) setPixel(g, row + dr, col + dc, true)
+          if (plot.plotType === 'xyline' && prevRow !== null && prevCol !== null) drawLine(g, prevRow, prevCol, row, col)
+          prevRow = row
+          prevCol = col
+        }
+      } else if (plot.plotType === 'histogram') {
+        const freq = plot.freqList ? this.state.lists[plot.freqList] : undefined
+        const binWidth = this.state.vars['Xscl'] || 1
+        const bins = new Map<number, number>()
+        xs.forEach((x, i) => {
+          const bin = Math.floor((x - w.xMin) / binWidth)
+          bins.set(bin, (bins.get(bin) ?? 0) + (freq ? freq[i] : 1))
+        })
+        const zeroRow = Math.min(GRAPH_ROWS - 1, Math.max(0, yToRow(0, w)))
+        for (const [bin, count] of bins) {
+          const colStart = Math.max(0, xToCol(w.xMin + bin * binWidth, w))
+          const colEnd = Math.min(GRAPH_COLS - 1, xToCol(w.xMin + (bin + 1) * binWidth, w))
+          const topRow = Math.min(GRAPH_ROWS - 1, Math.max(0, yToRow(count, w)))
+          for (let col = colStart; col <= colEnd; col++) {
+            for (let row = Math.min(topRow, zeroRow); row <= Math.max(topRow, zeroRow); row++) setPixel(g, row, col, true)
+          }
+        }
+      } else {
+        // boxplot: a horizontal box-and-whisker diagram of the five-number summary.
+        const freq = plot.freqList ? this.state.lists[plot.freqList] : undefined
+        const q = stats.quartiles(stats.sortedExpand(xs, freq))
+        const midRow = Math.floor(GRAPH_ROWS / 2)
+        const colMin = xToCol(q.min, w)
+        const colQ1 = xToCol(q.q1, w)
+        const colMed = xToCol(q.med, w)
+        const colQ3 = xToCol(q.q3, w)
+        const colMax = xToCol(q.max, w)
+        drawLine(g, midRow, colMin, midRow, colQ1)
+        drawLine(g, midRow, colQ3, midRow, colMax)
+        drawLine(g, midRow - 3, colQ1, midRow - 3, colQ3)
+        drawLine(g, midRow + 3, colQ1, midRow + 3, colQ3)
+        for (let row = midRow - 3; row <= midRow + 3; row++) {
+          setPixel(g, row, colQ1, true)
+          setPixel(g, row, colQ3, true)
+          setPixel(g, row, colMed, true)
+        }
+      }
     }
   }
 
@@ -528,9 +623,139 @@ class Runner {
   private evalCall(name: string, argExprs: Expr[]): Value {
     if (name === 'seq(') return this.evalSeq(argExprs)
     if (name === 'pxl-Test(') return this.evalPxlTest(argExprs)
+    if (name === 'nDeriv(') return this.evalNDeriv(argExprs)
+    if (name === 'fnInt(') return this.evalFnInt(argExprs)
+    if (name === 'fMin(') return this.evalExtremum(argExprs, 'min')
+    if (name === 'fMax(') return this.evalExtremum(argExprs, 'max')
+    if (name === 'solve(') return this.evalSolve(argExprs)
     const fn = BUILTINS[name]
     if (!fn) throw new TIError('ERR:SYNTAX', `Unknown function ${name}`)
     return fn(argExprs.map((a) => this.evalExpr(a)), this.builtinCtx())
+  }
+
+  /** Reads a Call argument that must be a bare variable, e.g. nDeriv(expr,X,3)'s "X". */
+  private requireVarArg(e: Expr, fnName: string): string {
+    if (e.type !== 'Var') throw new TIError('ERR:DATA TYPE', `${fnName} requires a variable as its 2nd argument`)
+    return e.name
+  }
+
+  /** Evaluates expr with varName temporarily bound to x — the shared building block for the calculus tools below. */
+  private evalScalarAt(expr: Expr, varName: string, x: number): number {
+    this.setRealVar(varName, x)
+    return requireNumber(this.evalExpr(expr), 'a number')
+  }
+
+  /** Numerical derivative via the symmetric difference quotient, default step H=0.001. */
+  private evalNDeriv(argExprs: Expr[]): Value {
+    if (argExprs.length < 3) throw new TIError('ERR:ARGUMENT', 'nDeriv( requires expr,var,value[,H]')
+    const [exprArg, varArg, valueArg, hArg] = argExprs
+    const varName = this.requireVarArg(varArg, 'nDeriv(')
+    const x = requireNumber(this.evalExpr(valueArg), 'a value')
+    const h = hArg ? requireNumber(this.evalExpr(hArg), 'a step size') : 1e-3
+    if (h <= 0) throw new TIError('ERR:DOMAIN', 'nDeriv( step size H must be positive')
+    const fPlus = this.evalScalarAt(exprArg, varName, x + h)
+    const fMinus = this.evalScalarAt(exprArg, varName, x - h)
+    return num(checkFinite((fPlus - fMinus) / (2 * h)))
+  }
+
+  /** Numerical integral via Simpson's rule over 200 subintervals. */
+  private evalFnInt(argExprs: Expr[]): Value {
+    if (argExprs.length < 4) throw new TIError('ERR:ARGUMENT', 'fnInt( requires expr,var,lower,upper[,tolerance]')
+    const [exprArg, varArg, lowerArg, upperArg] = argExprs
+    const varName = this.requireVarArg(varArg, 'fnInt(')
+    const lower = requireNumber(this.evalExpr(lowerArg), 'a lower bound')
+    const upper = requireNumber(this.evalExpr(upperArg), 'an upper bound')
+    if (lower === upper) return num(0)
+    const a = Math.min(lower, upper)
+    const b = Math.max(lower, upper)
+    const n = 200 // even, for Simpson's rule
+    const h = (b - a) / n
+    let sum = this.evalScalarAt(exprArg, varName, a) + this.evalScalarAt(exprArg, varName, b)
+    for (let i = 1; i < n; i++) {
+      sum += (i % 2 === 0 ? 2 : 4) * this.evalScalarAt(exprArg, varName, a + i * h)
+    }
+    const result = (h / 3) * sum
+    return num(checkFinite(lower > upper ? -result : result))
+  }
+
+  /** fMin(/fMax(: the var-value of a local extremum over [lower,upper], via golden-section search. */
+  private evalExtremum(argExprs: Expr[], mode: 'min' | 'max'): Value {
+    const fnName = mode === 'min' ? 'fMin(' : 'fMax('
+    if (argExprs.length < 4) throw new TIError('ERR:ARGUMENT', `${fnName} requires expr,var,lower,upper[,tolerance]`)
+    const [exprArg, varArg, lowerArg, upperArg, tolArg] = argExprs
+    const varName = this.requireVarArg(varArg, fnName)
+    let lo = requireNumber(this.evalExpr(lowerArg), 'a lower bound')
+    let hi = requireNumber(this.evalExpr(upperArg), 'an upper bound')
+    if (lo >= hi) throw new TIError('ERR:DOMAIN', `${fnName} requires lower < upper`)
+    const tol = tolArg ? requireNumber(this.evalExpr(tolArg), 'a tolerance') : 1e-5
+    const evalF = (x: number) => this.evalScalarAt(exprArg, varName, x)
+    const gr = (Math.sqrt(5) - 1) / 2
+    let c = hi - gr * (hi - lo)
+    let d = lo + gr * (hi - lo)
+    let fc = evalF(c)
+    let fd = evalF(d)
+    for (let i = 0; i < 200 && hi - lo > tol; i++) {
+      const cIsBetter = mode === 'min' ? fc < fd : fc > fd
+      if (cIsBetter) {
+        hi = d
+        d = c
+        fd = fc
+        c = hi - gr * (hi - lo)
+        fc = evalF(c)
+      } else {
+        lo = c
+        c = d
+        fc = fd
+        d = lo + gr * (hi - lo)
+        fd = evalF(d)
+      }
+    }
+    return num(checkFinite((lo + hi) / 2))
+  }
+
+  /** A numeric root of expr=0, via bisection within {lower,upper} if given, else Newton's method from guess. */
+  private evalSolve(argExprs: Expr[]): Value {
+    if (argExprs.length < 3) throw new TIError('ERR:ARGUMENT', 'solve( requires expr,var,guess[,{lower,upper}]')
+    const [exprArg, varArg, guessArg, boundsArg] = argExprs
+    const varName = this.requireVarArg(varArg, 'solve(')
+    const guess = requireNumber(this.evalExpr(guessArg), 'a guess')
+    const evalF = (x: number) => this.evalScalarAt(exprArg, varName, x)
+    if (boundsArg) {
+      const bounds = requireList(this.evalExpr(boundsArg), 'a {lower,upper} bounds list')
+      if (bounds.length !== 2) throw new TIError('ERR:ARGUMENT', 'solve( bounds must be a 2-element list {lower,upper}')
+      let [lo, hi] = bounds[0] <= bounds[1] ? bounds : [bounds[1], bounds[0]]
+      let flo = evalF(lo)
+      const fhi = evalF(hi)
+      if (flo === 0) return num(lo)
+      if (fhi === 0) return num(hi)
+      if (flo > 0 === fhi > 0) throw new TIError('ERR:DOMAIN', 'solve( requires expr to change sign across {lower,upper}')
+      for (let i = 0; i < 200 && hi - lo >= 1e-12; i++) {
+        const mid = (lo + hi) / 2
+        const fmid = evalF(mid)
+        if (Math.abs(fmid) < 1e-12) return num(mid)
+        if (fmid > 0 === flo > 0) {
+          lo = mid
+          flo = fmid
+        } else {
+          hi = mid
+        }
+      }
+      return num((lo + hi) / 2)
+    }
+    // Newton's method from guess, using a numeric derivative.
+    let x = guess
+    for (let i = 0; i < 100; i++) {
+      const fx = evalF(x)
+      if (Math.abs(fx) < 1e-12) return num(x)
+      const h = 1e-6 * Math.max(1, Math.abs(x))
+      const dfx = (evalF(x + h) - evalF(x - h)) / (2 * h)
+      if (dfx === 0) throw new TIError('ERR:DOMAIN', 'solve( could not find a root (derivative is 0 near the guess)')
+      const next = x - fx / dfx
+      if (!Number.isFinite(next)) throw new TIError('ERR:DOMAIN', 'solve( did not converge')
+      if (Math.abs(next - x) < 1e-12) return num(next)
+      x = next
+    }
+    throw new TIError('ERR:DOMAIN', 'solve( did not converge within 100 iterations')
   }
 
   private evalPxlTest(argExprs: Expr[]): Value {
@@ -692,18 +917,28 @@ class Runner {
 
   /** Computes and stores the 1-Var Stats result set (n, MeanX, Σx, Σx², Sx, σx, MinX, Q1, Med, Q3, MaxX). */
   private storeOneVarResults(xs: number[], w?: number[]) {
-    this.state.vars['n'] = w ? w.reduce((a, b) => a + b, 0) : xs.length
-    this.state.vars['MeanX'] = stats.mean(xs, w)
-    this.state.vars['Σx'] = stats.sumWeighted(xs, w)
-    this.state.vars['Σx²'] = stats.sumWeighted(xs.map((x) => x * x), w)
-    this.state.vars['Sx'] = stats.stdDev(xs, w)
-    this.state.vars['σx'] = stats.populationStdDev(xs, w)
+    this.setRealVar('n', w ? w.reduce((a, b) => a + b, 0) : xs.length)
+    this.setRealVar('MeanX', stats.mean(xs, w))
+    this.setRealVar('Σx', stats.sumWeighted(xs, w))
+    this.setRealVar('Σx²', stats.sumWeighted(xs.map((x) => x * x), w))
+    this.setRealVar('Sx', stats.stdDev(xs, w))
+    this.setRealVar('σx', stats.populationStdDev(xs, w))
     const q = stats.quartiles(stats.sortedExpand(xs, w))
-    this.state.vars['MinX'] = q.min
-    this.state.vars['Q1'] = q.q1
-    this.state.vars['Med'] = q.med
-    this.state.vars['Q3'] = q.q3
-    this.state.vars['MaxX'] = q.max
+    this.setRealVar('MinX', q.min)
+    this.setRealVar('Q1', q.q1)
+    this.setRealVar('Med', q.med)
+    this.setRealVar('Q3', q.q3)
+    this.setRealVar('MaxX', q.max)
+  }
+
+  /** Reads and validates the Xlist/Ylist data (plus optional weights) shared by every STAT CALC regression. */
+  private resolveXY(xList: string, yList: string, freqList: string | null): { xs: number[]; ys: number[]; w?: number[] } {
+    const xs = this.state.lists[xList] ?? []
+    const ys = this.state.lists[yList] ?? []
+    if (xs.length === 0 || ys.length === 0) throw new TIError('ERR:DOMAIN', 'Both lists must have data')
+    if (xs.length !== ys.length) throw new TIError('ERR:DIM MISMATCH', 'Xlist and Ylist must be the same length')
+    const w = this.resolveFreqList(freqList, xs.length)
+    return { xs, ys, w }
   }
 
   // --- Statements --------------------------------------------------------
@@ -895,36 +1130,72 @@ class Runner {
         return { kind: 'next' }
       }
       case 'TwoVarStats': {
-        const xs = this.state.lists[stmt.xList] ?? []
-        const ys = this.state.lists[stmt.yList] ?? []
-        if (xs.length === 0 || ys.length === 0) throw new TIError('ERR:DOMAIN', 'Both lists must have data')
-        if (xs.length !== ys.length) throw new TIError('ERR:DIM MISMATCH', 'Xlist and Ylist must be the same length')
-        const w = this.resolveFreqList(stmt.freqList, xs.length)
+        const { xs, ys, w } = this.resolveXY(stmt.xList, stmt.yList, stmt.freqList)
         this.storeOneVarResults(xs, w)
-        this.state.vars['MeanY'] = stats.mean(ys, w)
-        this.state.vars['Σy'] = stats.sumWeighted(ys, w)
-        this.state.vars['Σy²'] = stats.sumWeighted(
-          ys.map((y) => y * y),
-          w,
+        this.setRealVar('MeanY', stats.mean(ys, w))
+        this.setRealVar('Σy', stats.sumWeighted(ys, w))
+        this.setRealVar(
+          'Σy²',
+          stats.sumWeighted(
+            ys.map((y) => y * y),
+            w,
+          ),
         )
-        this.state.vars['Σxy'] = xs.reduce((acc, x, i) => acc + x * ys[i] * (w ? w[i] : 1), 0)
-        this.state.vars['Sy'] = stats.stdDev(ys, w)
-        this.state.vars['σy'] = stats.populationStdDev(ys, w)
+        this.setRealVar('Σxy', xs.reduce((acc, x, i) => acc + x * ys[i] * (w ? w[i] : 1), 0))
+        this.setRealVar('Sy', stats.stdDev(ys, w))
+        this.setRealVar('σy', stats.populationStdDev(ys, w))
         const [minY, maxY] = stats.minMax(ys, w)
-        this.state.vars['MinY'] = minY
-        this.state.vars['MaxY'] = maxY
+        this.setRealVar('MinY', minY)
+        this.setRealVar('MaxY', maxY)
         return { kind: 'next' }
       }
       case 'LinReg': {
-        const xs = this.state.lists[stmt.xList] ?? []
-        const ys = this.state.lists[stmt.yList] ?? []
-        if (xs.length === 0 || ys.length === 0) throw new TIError('ERR:DOMAIN', 'Both lists must have data')
-        if (xs.length !== ys.length) throw new TIError('ERR:DIM MISMATCH', 'Xlist and Ylist must be the same length')
-        const w = this.resolveFreqList(stmt.freqList, xs.length)
+        const { xs, ys, w } = this.resolveXY(stmt.xList, stmt.yList, stmt.freqList)
         const { a, b, r } = stats.linreg(xs, ys, w)
-        this.state.vars['a'] = a
-        this.state.vars['b'] = b
-        this.state.vars['r'] = r
+        this.setRealVar('a', a)
+        this.setRealVar('b', b)
+        this.setRealVar('r', r)
+        return { kind: 'next' }
+      }
+      case 'LinRegAbx': {
+        const { xs, ys, w } = this.resolveXY(stmt.xList, stmt.yList, stmt.freqList)
+        // Same fit as LinReg(ax+b) (y=ax+b); LinReg(a+bx) just names a=intercept, b=slope.
+        const { a: slope, b: intercept, r } = stats.linreg(xs, ys, w)
+        this.setRealVar('a', intercept)
+        this.setRealVar('b', slope)
+        this.setRealVar('r', r)
+        return { kind: 'next' }
+      }
+      case 'PolyReg': {
+        const { xs, ys, w } = this.resolveXY(stmt.xList, stmt.yList, stmt.freqList)
+        const { coeffs, r2 } = stats.polyReg(xs, ys, stmt.degree, w)
+        const names = stmt.degree === 2 ? ['c', 'b', 'a'] : stmt.degree === 3 ? ['d', 'c', 'b', 'a'] : ['e', 'd', 'c', 'b', 'a']
+        names.forEach((name, i) => this.setRealVar(name, coeffs[i]))
+        this.setRealVar('R²', r2)
+        return { kind: 'next' }
+      }
+      case 'LnReg': {
+        const { xs, ys, w } = this.resolveXY(stmt.xList, stmt.yList, stmt.freqList)
+        const { a, b, r } = stats.lnReg(xs, ys, w)
+        this.setRealVar('a', a)
+        this.setRealVar('b', b)
+        this.setRealVar('r', r)
+        return { kind: 'next' }
+      }
+      case 'ExpReg': {
+        const { xs, ys, w } = this.resolveXY(stmt.xList, stmt.yList, stmt.freqList)
+        const { a, b, r } = stats.expReg(xs, ys, w)
+        this.setRealVar('a', a)
+        this.setRealVar('b', b)
+        this.setRealVar('r', r)
+        return { kind: 'next' }
+      }
+      case 'PwrReg': {
+        const { xs, ys, w } = this.resolveXY(stmt.xList, stmt.yList, stmt.freqList)
+        const { a, b, r } = stats.pwrReg(xs, ys, w)
+        this.setRealVar('a', a)
+        this.setRealVar('b', b)
+        this.setRealVar('r', r)
         return { kind: 'next' }
       }
       case 'PrgmCall':
@@ -991,6 +1262,7 @@ class Runner {
           }
           yield { type: 'tick' }
         }
+        this.renderPlots(w)
         yield { type: 'tick' }
         return { kind: 'next' }
       }
@@ -1031,6 +1303,90 @@ class Runner {
         if (stmt.kind === 'PxlOn') setPixel(this.state.graphScreen, row, col, true)
         else if (stmt.kind === 'PxlOff') setPixel(this.state.graphScreen, row, col, false)
         else setPixel(this.state.graphScreen, row, col, !getPixel(this.state.graphScreen, row, col))
+        yield { type: 'tick' }
+        return { kind: 'next' }
+      }
+      case 'SortList': {
+        const primary = [...(this.state.lists[stmt.lists[0]] ?? [])]
+        const n = primary.length
+        const order = Array.from({ length: n }, (_, i) => i).sort((i, j) =>
+          stmt.mode === 'asc' ? primary[i] - primary[j] : primary[j] - primary[i],
+        )
+        for (const name of stmt.lists) {
+          const arr = this.state.lists[name] ?? []
+          if (arr.length !== n) throw new TIError('ERR:DIM MISMATCH', 'SortA(/SortD( requires all lists to be the same length')
+          this.state.lists[name] = order.map((i) => arr[i])
+        }
+        return { kind: 'next' }
+      }
+      case 'ClrList': {
+        for (const name of stmt.lists) this.state.lists[name] = []
+        return { kind: 'next' }
+      }
+      case 'DefinePlot': {
+        this.state.plots[stmt.plot - 1] = {
+          enabled: true,
+          plotType: stmt.plotType,
+          xList: stmt.xList,
+          yList: stmt.yList,
+          freqList: stmt.freqList,
+        }
+        return { kind: 'next' }
+      }
+      case 'SetPlotsEnabled': {
+        for (const p of stmt.plots) this.state.plots[p - 1].enabled = stmt.enabled
+        return { kind: 'next' }
+      }
+      case 'Shade': {
+        const w = this.window()
+        const leftX = stmt.xLeft ? requireNumber(this.evalExpr(stmt.xLeft), 'a number') : w.xMin
+        const rightX = stmt.xRight ? requireNumber(this.evalExpr(stmt.xRight), 'a number') : w.xMax
+        const colLeft = Math.max(0, xToCol(leftX, w))
+        const colRight = Math.min(GRAPH_COLS - 1, xToCol(rightX, w))
+        for (let col = colLeft; col <= colRight; col++) {
+          const x = colToX(col, w)
+          this.setRealVar('X', x)
+          let lowerY: number
+          let upperY: number
+          try {
+            lowerY = requireNumber(this.evalExpr(stmt.lower), 'a number')
+            upperY = requireNumber(this.evalExpr(stmt.upper), 'a number')
+          } catch {
+            continue
+          }
+          if (!Number.isFinite(lowerY) || !Number.isFinite(upperY) || lowerY >= upperY) continue
+          const rowTop = Math.min(GRAPH_ROWS - 1, Math.max(0, yToRow(upperY, w)))
+          const rowBottom = Math.min(GRAPH_ROWS - 1, Math.max(0, yToRow(lowerY, w)))
+          for (let row = rowTop; row <= rowBottom; row++) setPixel(this.state.graphScreen, row, col, true)
+        }
+        yield { type: 'tick' }
+        return { kind: 'next' }
+      }
+      case 'PtOn':
+      case 'PtOff':
+      case 'PtChange': {
+        const w = this.window()
+        const x = requireNumber(this.evalExpr(stmt.x), 'a number')
+        const y = requireNumber(this.evalExpr(stmt.y), 'a number')
+        const row = yToRow(y, w)
+        const col = xToCol(x, w)
+        if (stmt.kind === 'PtOn') setPixel(this.state.graphScreen, row, col, true)
+        else if (stmt.kind === 'PtOff') setPixel(this.state.graphScreen, row, col, false)
+        else setPixel(this.state.graphScreen, row, col, !getPixel(this.state.graphScreen, row, col))
+        yield { type: 'tick' }
+        return { kind: 'next' }
+      }
+      case 'Horizontal': {
+        const w = this.window()
+        const row = yToRow(requireNumber(this.evalExpr(stmt.y), 'a number'), w)
+        for (let col = 0; col < GRAPH_COLS; col++) setPixel(this.state.graphScreen, row, col, true)
+        yield { type: 'tick' }
+        return { kind: 'next' }
+      }
+      case 'Vertical': {
+        const w = this.window()
+        const col = xToCol(requireNumber(this.evalExpr(stmt.x), 'a number'), w)
+        for (let row = 0; row < GRAPH_ROWS; row++) setPixel(this.state.graphScreen, row, col, true)
         yield { type: 'tick' }
         return { kind: 'next' }
       }
@@ -1143,4 +1499,20 @@ export function runProgram(
   resolveProgram: ProgramResolver,
 ): Generator<RunEvent, void, ResumeValue> {
   return new Runner(state, resolveProgram).run(entry)
+}
+
+/**
+ * Evaluates a Y-variable at x against a snapshot of interpreter state,
+ * outside of any running program — for GUI features (the Graph tab's trace
+ * cursor) that need a one-off value rather than a full program run. Mutates
+ * state.vars['X'] as a side effect, matching Y1(x)'s real-hardware quirk.
+ * Returns null instead of throwing (undefined Y-variable, a value outside
+ * its domain, ...) since a GUI readout has no error screen to show.
+ */
+export function evalYVarAt(state: InterpreterState, name: string, x: number): number | null {
+  try {
+    return new Runner(state, () => undefined).evalYVariable(name, x)
+  } catch {
+    return null
+  }
 }

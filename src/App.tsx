@@ -122,15 +122,17 @@ export default function App() {
               />
             </>
           )}
-          {rightTab === 'graph' && <GraphScreen graphScreen={calc.graphScreen} vars={calc.vars} yVars={calc.yVars} />}
+          {rightTab === 'graph' && (
+            <GraphScreen graphScreen={calc.graphScreen} vars={calc.vars} yVars={calc.yVars} evalYVarAt={calc.evalYVarAt} />
+          )}
           {rightTab === 'commands' && <CommandReference onInsert={(text) => editorRef.current?.insertAtCursor(text)} />}
         </section>
       </main>
 
       <footer className="app-footer">
         <p>
-          Scope: TI-84 Plus / TI-84 Plus Silver Edition TI-BASIC only (no stat plots or a trace cursor yet — see the README
-          roadmap). Angle mode defaults to Degree, complex mode defaults to Real; switch with the Degree/Radian and
+          Scope: TI-84 Plus / TI-84 Plus Silver Edition TI-BASIC (no ASM/App programs or calculator-linking — see the README
+          for the full list). Angle mode defaults to Degree, complex mode defaults to Real; switch with the Degree/Radian and
           Real/a+bi/re^θi commands.
         </p>
       </footer>

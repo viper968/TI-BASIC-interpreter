@@ -236,6 +236,26 @@ export const BUILTINS: Record<string, Builtin> = {
     }
     return str(s.slice(start - 1, start - 1 + length))
   },
+  'inString(': (args) => {
+    const haystack = requireString(args[0], 'a string')
+    const needle = requireString(args[1], 'a substring')
+    const start = args.length > 2 ? Math.round(requireNumber(args[2], 'a start position')) : 1
+    if (start < 1) throw new TIError('ERR:DOMAIN', 'inString( start position must be ≥ 1')
+    if (start > haystack.length) return num(0)
+    const idx = haystack.indexOf(needle, start - 1)
+    return num(idx === -1 ? 0 : idx + 1)
+  },
+  'cumSum(': (args) => {
+    const xs = requireList(args[0], 'a list')
+    let acc = 0
+    return list(xs.map((x) => (acc += x)))
+  },
+  'ΔList(': (args) => {
+    const xs = requireList(args[0], 'a list')
+    const out: number[] = []
+    for (let i = 1; i < xs.length; i++) out.push(xs[i] - xs[i - 1])
+    return list(out)
+  },
   getKey: (_args, ctx) => num(ctx.takeLastKey()),
 }
 

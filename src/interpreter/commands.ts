@@ -10,7 +10,8 @@
  *
  * Scope: TI-84 Plus / TI-84 Plus Silver Edition TI-BASIC (MathPrint off,
  * classic OS, monochrome). Notably NOT included (see README "Roadmap"):
- * stat plots, a trace cursor, Shade(, apps, user-created list names, and
+ * complex lists/matrices, ModBoxplot/NormProbPlot, Text(, DiagnosticOn/Off
+ * (r/R² are always computed), Med-Med/Logistic/SinReg, apps, and
  * CATALOG-only rarely used commands.
  */
 
@@ -81,6 +82,12 @@ export const COMMANDS: CommandSpec[] = [
   { name: 'prod(', category: 'list', kind: 'function', syntax: 'prod(list)', description: 'Returns the product of all elements in a list.' },
   { name: 'augment(', category: 'list', kind: 'function', syntax: 'augment(list1,list2) or augment(matrixA,matrixB)', description: 'Concatenates two lists, or two matrices with the same row count (side by side).' },
   { name: 'Fill(', category: 'list', kind: 'statement', syntax: 'Fill(value,list) or Fill(value,matrix)', description: 'Overwrites every element of an already-sized list or matrix with value.' },
+  { name: 'SortA(', category: 'list', kind: 'statement', syntax: 'SortA(list1[,list2,…])', description: 'Sorts list1 ascending in place; any additional lists are reordered the same way, keeping paired data aligned.' },
+  { name: 'SortD(', category: 'list', kind: 'statement', syntax: 'SortD(list1[,list2,…])', description: 'Sorts list1 descending in place; any additional lists are reordered the same way, keeping paired data aligned.' },
+  { name: 'ClrList', category: 'list', kind: 'statement', syntax: 'ClrList list1[,list2,…]', description: 'Clears one or more lists to empty.' },
+  { name: 'cumSum(', category: 'list', kind: 'function', syntax: 'cumSum(list)', description: 'Returns a list of running (cumulative) sums.' },
+  { name: 'ΔList(', category: 'list', kind: 'function', syntax: 'ΔList(list)', description: 'Returns a list, one shorter, of the differences between consecutive elements.' },
+  { name: '∟', category: 'list', kind: 'constant', syntax: '∟NAME', description: 'Prefixes a custom list name (a letter, then up to 4 more letters/digits) so it can be stored and read just like L1-L6, e.g. {1,2,3}->∟DATA. Not needed for L1-L6 themselves.' },
 
   // ---- Matrices ---------------------------------------------------------------
   { name: '[A]', category: 'matrix', kind: 'constant', syntax: '[A] … [J]', description: 'The 10 matrix variables. Store a whole matrix, an element [A](row,col), or build one with a [[1,2][3,4]] literal (rows adjacent, no commas between them).' },
@@ -103,6 +110,16 @@ export const COMMANDS: CommandSpec[] = [
   { name: '1-Var Stats', category: 'stats', kind: 'statement', syntax: '1-Var Stats [Xlist[,Freqlist]]', description: 'Computes one-variable summary statistics for Xlist (default L1) and stores them into n, MeanX, Σx, Σx², Sx, σx, MinX, Q1, Med, Q3, MaxX.' },
   { name: '2-Var Stats', category: 'stats', kind: 'statement', syntax: '2-Var Stats [Xlist,Ylist[,Freqlist]]', description: 'Computes two-variable summary statistics for Xlist,Ylist (default L1,L2) and stores them into the 1-Var results plus MeanY, Σy, Σy², Σxy, Sy, σy, MinY, MaxY.' },
   { name: 'LinReg(ax+b)', category: 'stats', kind: 'statement', syntax: 'LinReg(ax+b) [Xlist,Ylist[,Freqlist]]', description: 'Fits a least-squares line y=ax+b to Xlist,Ylist (default L1,L2) and stores the result into a, b, r. (The optional RegEQ argument to also store the equation into a Y-variable is not supported yet.)' },
+  { name: 'LinReg(a+bx)', category: 'stats', kind: 'statement', syntax: 'LinReg(a+bx) [Xlist,Ylist[,Freqlist]]', description: 'Fits the same least-squares line as LinReg(ax+b), with a and b swapped (y=a+bx), and stores the result into a, b, r.' },
+  { name: 'QuadReg', category: 'stats', kind: 'statement', syntax: 'QuadReg [Xlist,Ylist[,Freqlist]]', description: 'Fits a least-squares quadratic y=ax²+bx+c and stores the result into a, b, c, R².' },
+  { name: 'CubicReg', category: 'stats', kind: 'statement', syntax: 'CubicReg [Xlist,Ylist[,Freqlist]]', description: 'Fits a least-squares cubic y=ax³+bx²+cx+d and stores the result into a, b, c, d, R².' },
+  { name: 'QuartReg', category: 'stats', kind: 'statement', syntax: 'QuartReg [Xlist,Ylist[,Freqlist]]', description: 'Fits a least-squares quartic y=ax⁴+bx³+cx²+dx+e and stores the result into a, b, c, d, e, R². This genuinely overwrites e (Euler\'s number), matching real hardware.' },
+  { name: 'LnReg', category: 'stats', kind: 'statement', syntax: 'LnReg [Xlist,Ylist[,Freqlist]]', description: 'Fits y=a+b·ln(x) (a linear fit on ln(x)) and stores the result into a, b, r.' },
+  { name: 'ExpReg', category: 'stats', kind: 'statement', syntax: 'ExpReg [Xlist,Ylist[,Freqlist]]', description: 'Fits y=a·b^x (a linear fit on ln(y)) and stores the result into a, b, r.' },
+  { name: 'PwrReg', category: 'stats', kind: 'statement', syntax: 'PwrReg [Xlist,Ylist[,Freqlist]]', description: 'Fits y=a·x^b (a linear fit on ln(x) and ln(y)) and stores the result into a, b, r.' },
+  { name: 'c', category: 'stats', kind: 'constant', syntax: 'c', description: 'The x² coefficient from the last QuadReg/CubicReg/QuartReg.' },
+  { name: 'd', category: 'stats', kind: 'constant', syntax: 'd', description: 'The x³ coefficient from the last CubicReg/QuartReg.' },
+  { name: 'R²', category: 'stats', kind: 'constant', syntax: 'R²', description: 'Coefficient of determination from the last QuadReg/CubicReg/QuartReg.' },
   { name: 'normalcdf(', category: 'stats', kind: 'function', syntax: 'normalcdf(lower,upper[,μ,σ])', description: 'Area under the normal curve between lower and upper (default μ=0,σ=1).' },
   { name: 'invNorm(', category: 'stats', kind: 'function', syntax: 'invNorm(area[,μ,σ])', description: 'The x-value where the normal CDF equals area (default μ=0,σ=1).' },
   { name: 'n', category: 'stats', kind: 'constant', syntax: 'n', description: 'Number of data points from the last 1-Var Stats / 2-Var Stats.' },
@@ -145,6 +162,21 @@ export const COMMANDS: CommandSpec[] = [
   { name: 'Pxl-Off(', category: 'graph', kind: 'statement', syntax: 'Pxl-Off(row,col)', description: 'Turns off one pixel (row 0-62, col 0-94) on the graph screen.' },
   { name: 'Pxl-Change(', category: 'graph', kind: 'statement', syntax: 'Pxl-Change(row,col)', description: 'Toggles one pixel (row 0-62, col 0-94) on the graph screen.' },
   { name: 'pxl-Test(', category: 'graph', kind: 'function', syntax: 'pxl-Test(row,col)', description: 'Returns 1 if the given pixel is on, else 0.' },
+  { name: 'Shade(', category: 'graph', kind: 'statement', syntax: 'Shade(lowerFunc,upperFunc[,Xleft,Xright])', description: 'Shades the region between two expressions (in X) on the graph screen, optionally limited to Xleft-Xright.' },
+  { name: 'Pt-On(', category: 'graph', kind: 'statement', syntax: 'Pt-On(X,Y)', description: 'Turns on the pixel nearest (X,Y) in graph coordinates.' },
+  { name: 'Pt-Off(', category: 'graph', kind: 'statement', syntax: 'Pt-Off(X,Y)', description: 'Turns off the pixel nearest (X,Y) in graph coordinates.' },
+  { name: 'Pt-Change(', category: 'graph', kind: 'statement', syntax: 'Pt-Change(X,Y)', description: 'Toggles the pixel nearest (X,Y) in graph coordinates.' },
+  { name: 'Horizontal', category: 'graph', kind: 'statement', syntax: 'Horizontal Y', description: 'Draws a full-width horizontal line across the graph screen at Y.' },
+  { name: 'Vertical', category: 'graph', kind: 'statement', syntax: 'Vertical X', description: 'Draws a full-height vertical line across the graph screen at X.' },
+  { name: 'Plot1(', category: 'graph', kind: 'statement', syntax: 'Plot1(type,Xlist[,Ylist][,Freqlist])', description: 'Defines and turns on stat plot 1. type is Scatter/xyLine (need Xlist,Ylist) or Histogram/Boxplot (need Xlist[,Freqlist]). DispGraph draws every enabled plot alongside the Y= functions.' },
+  { name: 'Plot2(', category: 'graph', kind: 'statement', syntax: 'Plot2(type,Xlist[,Ylist][,Freqlist])', description: 'Same as Plot1(, for stat plot 2.' },
+  { name: 'Plot3(', category: 'graph', kind: 'statement', syntax: 'Plot3(type,Xlist[,Ylist][,Freqlist])', description: 'Same as Plot1(, for stat plot 3.' },
+  { name: 'Scatter', category: 'graph', kind: 'constant', syntax: 'Plot1(Scatter,Xlist,Ylist)', description: 'Plot1(/2(/3( type: an unconnected scatter plot of points (Xlist(i),Ylist(i)).' },
+  { name: 'xyLine', category: 'graph', kind: 'constant', syntax: 'Plot1(xyLine,Xlist,Ylist)', description: 'Plot1(/2(/3( type: like Scatter, but consecutive points are connected with line segments.' },
+  { name: 'Histogram', category: 'graph', kind: 'constant', syntax: 'Plot1(Histogram,Xlist[,Freqlist])', description: 'Plot1(/2(/3( type: a histogram of Xlist, bucketed into Xscl-wide bins starting at Xmin.' },
+  { name: 'Boxplot', category: 'graph', kind: 'constant', syntax: 'Plot1(Boxplot,Xlist[,Freqlist])', description: 'Plot1(/2(/3( type: a box-and-whisker plot of Xlist\'s five-number summary (min, Q1, median, Q3, max).' },
+  { name: 'PlotsOn', category: 'graph', kind: 'statement', syntax: 'PlotsOn [1,2,3]', description: 'Enables the given stat plots (default: all three) without changing their configuration.' },
+  { name: 'PlotsOff', category: 'graph', kind: 'statement', syntax: 'PlotsOff [1,2,3]', description: 'Disables the given stat plots (default: all three) without changing their configuration.' },
 
   // ---- Complex numbers ---------------------------------------------------------------
   { name: 'i', category: 'complex', kind: 'constant', syntax: 'i', description: 'The imaginary unit, i²=-1. Build a complex number with ordinary arithmetic, e.g. 3+4i.' },
@@ -159,6 +191,7 @@ export const COMMANDS: CommandSpec[] = [
   // ---- Strings ---------------------------------------------------------------
   { name: 'length(', category: 'string', kind: 'function', syntax: 'length(string)', description: 'Returns the number of characters in a string.' },
   { name: 'sub(', category: 'string', kind: 'function', syntax: 'sub(string,start,length)', description: 'Returns a substring starting at start (1-based) of the given length.' },
+  { name: 'inString(', category: 'string', kind: 'function', syntax: 'inString(string,substring[,start])', description: 'Returns the 1-based position of the first occurrence of substring in string at or after start (default 1), or 0 if not found.' },
 
   // ---- Math functions ---------------------------------------------------------------
   { name: 'sin(', category: 'math', kind: 'function', syntax: 'sin(value)', description: 'Sine, in the current angle mode (degrees).' },
@@ -184,6 +217,11 @@ export const COMMANDS: CommandSpec[] = [
   { name: 'lcm(', category: 'math', kind: 'function', syntax: 'lcm(a,b)', description: 'Least common multiple.' },
   { name: '►Frac', category: 'math', kind: 'operator', syntax: 'value►Frac', description: 'Displays value as a fraction (e.g. 0.5►Frac shows "1/2"). Simplified: returns fraction text, not a first-class fraction type.' },
   { name: '►Dec', category: 'math', kind: 'operator', syntax: 'value►Dec', description: 'Converts a ►Frac result (or any number) back to decimal.' },
+  { name: 'nDeriv(', category: 'math', kind: 'function', syntax: 'nDeriv(expr,var,value[,H])', description: 'Numerical derivative of expr with respect to var at value, via the symmetric difference quotient (default step H=0.001).' },
+  { name: 'fnInt(', category: 'math', kind: 'function', syntax: 'fnInt(expr,var,lower,upper[,tolerance])', description: 'Numerical integral of expr with respect to var from lower to upper (Simpson\'s rule).' },
+  { name: 'fMin(', category: 'math', kind: 'function', syntax: 'fMin(expr,var,lower,upper[,tolerance])', description: 'The var-value where expr has a local minimum between lower and upper (golden-section search).' },
+  { name: 'fMax(', category: 'math', kind: 'function', syntax: 'fMax(expr,var,lower,upper[,tolerance])', description: 'The var-value where expr has a local maximum between lower and upper (golden-section search).' },
+  { name: 'solve(', category: 'math', kind: 'function', syntax: 'solve(expr,var,guess[,{lower,upper}])', description: 'A numeric root of expr=0 with respect to var, starting from guess (bisecting within {lower,upper} first, if given). Not automatically stored anywhere — assign the result yourself.' },
 
   // ---- Logic ---------------------------------------------------------------
   { name: 'and', category: 'logic', kind: 'operator', syntax: 'condition1 and condition2', description: 'Logical AND (non-zero is true).' },
@@ -195,6 +233,7 @@ export const COMMANDS: CommandSpec[] = [
 
   // ---- Misc / constants ---------------------------------------------------------------
   { name: 'π', aliases: ['pi'], category: 'misc', kind: 'constant', syntax: 'π', description: 'The constant pi.' },
+  { name: 'e', category: 'misc', kind: 'constant', syntax: 'e', description: 'Euler\'s number, ≈2.718281828459. Unlike π, this behaves like an ordinary variable — it defaults to that value but can be overwritten (e.g. QuartReg\'s 5th coefficient genuinely does this), matching a well-known real-hardware quirk.' },
   { name: 'prgm', category: 'misc', kind: 'statement', syntax: 'prgmNAME', description: 'Calls another stored program by name.' },
   { name: 'Degree', category: 'misc', kind: 'statement', syntax: 'Degree', description: 'Sets the angle mode to degrees (this interpreter’s default).' },
   { name: 'Radian', category: 'misc', kind: 'statement', syntax: 'Radian', description: 'Sets the angle mode to radians.' },
@@ -221,7 +260,10 @@ export const RESERVED_VAR_NAMES = new Set([
   'n',
   'a',
   'b',
+  'c',
+  'd',
   'r',
+  'R²',
   'MeanX',
   'Σx',
   'Σx²',
@@ -248,6 +290,9 @@ export const RESERVED_VAR_NAMES = new Set([
   'Ymax',
   'Yscl',
   'Xres',
+  // Euler's number: an ordinary variable (see the 'e' command entry above),
+  // not a fixed constant like π — its default is set in createInterpreterState.
+  'e',
 ])
 
 export function findCommand(name: string): CommandSpec | undefined {

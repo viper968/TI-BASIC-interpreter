@@ -694,6 +694,29 @@
   font-size: 12px;
   color: var(--text-dim);
 }
+.graph-trace {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.graph-trace-select {
+  background: var(--bg-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+}
+.graph-trace-readout {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-raised);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
 .graph-yvars {
   display: flex;
   flex-direction: column;
