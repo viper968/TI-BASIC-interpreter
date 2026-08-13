@@ -9,6 +9,7 @@ import { ProgramEditor, type ProgramEditorHandle } from './components/ProgramEdi
 import { ProgramList } from './components/ProgramList'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { CommandReference } from './components/CommandReference'
+import { VariableWatch } from './components/VariableWatch'
 
 type RightTab = 'calculator' | 'commands'
 
@@ -98,14 +99,17 @@ export default function App() {
             </button>
           </div>
           {rightTab === 'calculator' ? (
-            <CalculatorScreen
-              screenRows={calc.screenRows}
-              status={calc.status}
-              pending={calc.pending}
-              error={calc.error}
-              onResume={calc.resume}
-              onGotoErrorLine={jumpToLine}
-            />
+            <>
+              <CalculatorScreen
+                screenRows={calc.screenRows}
+                status={calc.status}
+                pending={calc.pending}
+                error={calc.error}
+                onResume={calc.resume}
+                onGotoErrorLine={jumpToLine}
+              />
+              <VariableWatch vars={calc.vars} strVars={calc.strVars} lists={calc.lists} />
+            </>
           ) : (
             <CommandReference onInsert={(text) => editorRef.current?.insertAtCursor(text)} />
           )}

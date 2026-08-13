@@ -13,6 +13,8 @@ export type TokenType =
   | 'STO' // -> or the TI store arrow
   | 'LPAREN'
   | 'RPAREN'
+  | 'LBRACE'
+  | 'RBRACE'
   | 'COMMA'
   | 'COLON'
   | 'NEWLINE'

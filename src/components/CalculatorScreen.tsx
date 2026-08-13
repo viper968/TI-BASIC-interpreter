@@ -72,25 +72,30 @@ export function CalculatorScreen({ screenRows, status, pending, error, onResume,
       </div>
 
       {status === 'input' && pending?.type === 'input' && (
-        <form
-          className="calc-input-row"
-          onSubmit={(e) => {
-            e.preventDefault()
-            onResume(inputText)
-          }}
-        >
-          <span className="calc-input-label">{pending.prompt ?? '?'}</span>
-          <input
-            ref={inputRef}
-            className="calc-input-field"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder="type a value, e.g. 5 or &quot;TEXT&quot;"
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <button type="submit">ENTER</button>
-        </form>
+        <div className="calc-input-wrap">
+          {pending.invalid && (
+            <div className="calc-input-invalid">ERR:SYNTAX — that wasn't a value. Try again.</div>
+          )}
+          <form
+            className="calc-input-row"
+            onSubmit={(e) => {
+              e.preventDefault()
+              onResume(inputText)
+            }}
+          >
+            <span className="calc-input-label">{pending.prompt ?? '?'}</span>
+            <input
+              ref={inputRef}
+              className={pending.invalid ? 'calc-input-field calc-input-field-invalid' : 'calc-input-field'}
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder="type a value, e.g. 5 or &quot;TEXT&quot;"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <button type="submit">ENTER</button>
+          </form>
+        </div>
       )}
 
       {status === 'done' && <div className="calc-status-line">Done</div>}

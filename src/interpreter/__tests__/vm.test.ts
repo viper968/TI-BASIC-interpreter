@@ -94,9 +94,22 @@ describe('vm: control flow', () => {
 })
 
 describe('vm: lists and strings', () => {
-  it('rejects the {…} list-literal syntax, which is not yet implemented', () => {
-    // Lists are built with seq( or element-by-element assignment (see below).
-    expect(() => run('{1,2,3}->L1')).toThrow()
+  it('builds a list from a {…} literal', () => {
+    const r = run('{1,2,3}->L1\nDisp L1(2)')
+    expect(r.error).toBeNull()
+    expect(r.state.lists.L1).toEqual([1, 2, 3])
+    expect(r.screenText.split('\n')[0]).toBe('2')
+  })
+
+  it('evaluates expressions inside a {…} literal', () => {
+    const r = run('5->X\n{1,X,X+1}->L1')
+    expect(r.error).toBeNull()
+    expect(r.state.lists.L1).toEqual([1, 5, 6])
+  })
+
+  it('rejects a non-numeric element in a {…} literal', () => {
+    const r = run('{1,"A",3}->L1')
+    expect(r.error?.code).toBe('ERR:DATA TYPE')
   })
 
   it('builds a list with element assignment, growing one slot at a time', () => {
@@ -140,6 +153,48 @@ describe('vm: angle mode and trig', () => {
   })
 })
 
+describe('vm: display modes', () => {
+  it('Fix n forces a fixed number of decimal places', () => {
+    const r = run('Fix 2\nDisp 5\nDisp 3.14159')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n').slice(0, 2)).toEqual(['5.00', '3.14'])
+    expect(r.state.fixedDecimals).toBe(2)
+  })
+
+  it('Float restores automatic precision', () => {
+    const r = run('Fix 2\nFloat\nDisp 3.14159')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('3.14159')
+  })
+
+  it('Sci forces scientific notation', () => {
+    const r = run('Sci\nDisp 1234')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('1.234E3')
+  })
+
+  it('Eng forces an exponent that is a multiple of 3', () => {
+    const r = run('Eng\nDisp 1234')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('1.234E3')
+    const r2 = run('Eng\nDisp 12340')
+    expect(r2.screenText.split('\n')[0]).toBe('12.34E3')
+  })
+
+  it('►Frac shows a fraction and ►Dec round-trips back', () => {
+    const r = run('Disp .5►Frac\nDisp (.5►Frac)►Dec')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('1/2')
+    expect(r.screenText.split('\n')[1]).toBe('.5')
+  })
+
+  it('►Frac leaves a non-"nice" decimal alone instead of showing a misleading fraction', () => {
+    const r = run('Disp π►Frac')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).not.toContain('/')
+  })
+})
+
 describe('vm: errors', () => {
   it('raises ERR:DIVIDE BY 0', () => {
     const r = run('1/0')
@@ -175,6 +230,27 @@ describe('vm: interactive I/O', () => {
     expect(r.error).toBeNull()
     expect(r.state.vars.A).toBe(3)
     expect(r.state.vars.B).toBe(4)
+  })
+
+  it('re-prompts Input on unparseable text instead of ending the program', () => {
+    const r = run('Input "N?",N\nDisp N', ['(1+2', '7'])
+    expect(r.error).toBeNull()
+    expect(r.state.vars.N).toBe(7)
+    const inputEvents = r.events.filter((e) => e.type === 'input')
+    expect(inputEvents).toHaveLength(2)
+    expect(inputEvents[0]).toMatchObject({ invalid: false })
+    expect(inputEvents[1]).toMatchObject({ invalid: true })
+  })
+
+  it('re-prompts Prompt on unparseable text too', () => {
+    const r = run('Prompt A', ['???', '9'])
+    expect(r.error).toBeNull()
+    expect(r.state.vars.A).toBe(9)
+  })
+
+  it('still ends the program on a runtime error inside otherwise-valid Input text', () => {
+    const r = run('Input "N?",N\nDisp N', ['1/0'])
+    expect(r.error?.code).toBe('ERR:DIVIDE BY 0')
   })
 
   it('pauses on Pause and resumes', () => {

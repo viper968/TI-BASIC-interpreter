@@ -153,6 +153,20 @@ class Parser {
         case 'Radian':
           this.advance()
           return { kind: 'SetAngleMode', mode: 'radian' }
+        case 'Normal':
+          this.advance()
+          return { kind: 'SetNotation', mode: 'normal' }
+        case 'Sci':
+          this.advance()
+          return { kind: 'SetNotation', mode: 'sci' }
+        case 'Eng':
+          this.advance()
+          return { kind: 'SetNotation', mode: 'eng' }
+        case 'Float':
+          this.advance()
+          return { kind: 'SetDecimalMode', digits: null }
+        case 'Fix':
+          return this.parseFix()
         default:
           break
       }
@@ -197,6 +211,16 @@ class Parser {
     }
     this.expect('RPAREN', '")"')
     return { kind: 'For', varName: varTok.text, start, end, step }
+  }
+
+  private parseFix(): Stmt {
+    this.advance() // Fix
+    const digitTok = this.current()
+    if (digitTok.type !== 'NUMBER' || !/^[0-9]$/.test(digitTok.text)) {
+      this.error('Fix requires a single digit 0-9')
+    }
+    this.advance()
+    return { kind: 'SetDecimalMode', digits: Number(digitTok.text) }
   }
 
   /** Reads a 1-2 character label name from consecutive VAR/single-digit tokens. */
@@ -466,6 +490,9 @@ class Parser {
       } else if (tok.type === 'BANG') {
         this.advance()
         expr = { type: 'Postfix', op: '!', operand: expr }
+      } else if (tok.type === 'KEYWORD' && (tok.text === '►Frac' || tok.text === '►Dec')) {
+        this.advance()
+        expr = { type: 'Postfix', op: tok.text, operand: expr }
       } else {
         break
       }
@@ -512,6 +539,19 @@ class Parser {
         const inner = this.parseExpr()
         this.expect('RPAREN', '")"')
         return inner
+      }
+      case 'LBRACE': {
+        this.advance()
+        const elements: Expr[] = []
+        if (this.current().type !== 'RBRACE') {
+          elements.push(this.parseExpr())
+          while (this.current().type === 'COMMA') {
+            this.advance()
+            elements.push(this.parseExpr())
+          }
+        }
+        this.expect('RBRACE', '"}"')
+        return { type: 'ListLiteral', elements }
       }
       case 'KEYWORD': {
         if (STATEMENT_ONLY_KEYWORDS.has(tok.text)) {

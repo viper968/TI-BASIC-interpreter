@@ -15,6 +15,22 @@ describe('lexer', () => {
     expect(tokens[3].type).toBe('EOF')
   })
 
+  it('tokenizes a leading-dot decimal like ".5"', () => {
+    const { tokens, diagnostics } = tokenize('.5')
+    expect(diagnostics).toHaveLength(0)
+    expect(tokens[0]).toMatchObject({ type: 'NUMBER', value: 0.5 })
+  })
+
+  it('tokenizes { and } for list literals', () => {
+    expect(types('{1,2,3}')).toEqual(['LBRACE', 'NUMBER', 'COMMA', 'NUMBER', 'COMMA', 'NUMBER', 'RBRACE', 'EOF'])
+  })
+
+  it('tokenizes ►Frac and ►Dec', () => {
+    const { tokens, diagnostics } = tokenize('.5►Frac►Dec')
+    expect(diagnostics).toHaveLength(0)
+    expect(tokens.map((t) => t.text)).toEqual(['.5', '►Frac', '►Dec', ''])
+  })
+
   it('greedily matches multi-character keywords over single-letter variables', () => {
     expect(types('For(I,1,10)\nEnd')).toEqual([
       'KEYWORD',

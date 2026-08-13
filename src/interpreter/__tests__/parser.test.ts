@@ -88,6 +88,33 @@ describe('parser: expressions', () => {
     if (stmt.kind !== 'Expr') throw new Error('expected Expr')
     expect(stmt.expr).toEqual({ type: 'ListElement', name: 'L1', index: { type: 'Number', value: 3 } })
   })
+
+  it('parses a {…} list literal', () => {
+    const { program, diagnostics } = parse('{1,2,X+1}')
+    expect(diagnostics).toHaveLength(0)
+    const stmt = program.instructions[0].stmt
+    if (stmt.kind !== 'Expr') throw new Error('expected Expr')
+    expect(stmt.expr).toEqual({
+      type: 'ListLiteral',
+      elements: [
+        { type: 'Number', value: 1 },
+        { type: 'Number', value: 2 },
+        { type: 'Binary', op: '+', left: { type: 'Var', name: 'X' }, right: { type: 'Number', value: 1 } },
+      ],
+    })
+  })
+
+  it('parses ►Frac/►Dec as postfix operators', () => {
+    const { program, diagnostics } = parse('.5►Frac►Dec')
+    expect(diagnostics).toHaveLength(0)
+    const stmt = program.instructions[0].stmt
+    if (stmt.kind !== 'Expr') throw new Error('expected Expr')
+    expect(stmt.expr).toEqual({
+      type: 'Postfix',
+      op: '►Dec',
+      operand: { type: 'Postfix', op: '►Frac', operand: { type: 'Number', value: 0.5 } },
+    })
+  })
 })
 
 describe('parser: statements', () => {
@@ -132,6 +159,23 @@ describe('parser: statements', () => {
     expect(diagnostics).toHaveLength(0)
     expect(program.instructions[0].stmt).toEqual({ kind: 'Lbl', name: 'AB' })
     expect(program.instructions[1].stmt).toEqual({ kind: 'Goto', name: 'AB' })
+  })
+
+  it('parses Fix n and the other display-mode statements', () => {
+    const fix = parse('Fix 4')
+    expect(fix.diagnostics).toHaveLength(0)
+    expect(fix.program.instructions[0].stmt).toEqual({ kind: 'SetDecimalMode', digits: 4 })
+
+    const float = parse('Float')
+    expect(float.program.instructions[0].stmt).toEqual({ kind: 'SetDecimalMode', digits: null })
+
+    const sci = parse('Sci')
+    expect(sci.program.instructions[0].stmt).toEqual({ kind: 'SetNotation', mode: 'sci' })
+  })
+
+  it('rejects Fix without a 0-9 digit', () => {
+    const { diagnostics } = parse('Fix A')
+    expect(diagnostics.length).toBeGreaterThan(0)
   })
 
   it('parses prgm calls', () => {

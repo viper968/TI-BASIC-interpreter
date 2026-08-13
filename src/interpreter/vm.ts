@@ -4,9 +4,11 @@ import type { BinaryOp, Expr, Instruction, Stmt, StoreTarget } from './ast'
 import { link as linkProgram, type LinkInfo, type LinkedProgram } from './linker'
 import { parse } from './parser'
 import {
+  type NumberFormatOptions,
   type Value,
   broadcastNumeric,
   checkFinite,
+  formatAsFraction,
   formatValue,
   isTruthy,
   list,
@@ -50,6 +52,10 @@ export interface InterpreterState {
   lists: Record<string, number[]>
   ans: Value
   angleMode: AngleMode
+  /** MODE screen: Normal/Sci/Eng notation. */
+  notation: 'normal' | 'sci' | 'eng'
+  /** MODE screen: null = Float (automatic), 0-9 = Fix n. */
+  fixedDecimals: number | null
   screen: Screen
   lastKey: number
 }
@@ -61,7 +67,17 @@ export function createInterpreterState(): InterpreterState {
   for (const n of STR_VAR_NAMES) strVars[n] = ''
   const lists: Record<string, number[]> = {}
   for (const n of LIST_NAMES) lists[n] = []
-  return { vars, strVars, lists, ans: num(0), angleMode: 'degree', screen: createScreen(), lastKey: 0 }
+  return {
+    vars,
+    strVars,
+    lists,
+    ans: num(0),
+    angleMode: 'degree',
+    notation: 'normal',
+    fixedDecimals: null,
+    screen: createScreen(),
+    lastKey: 0,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -70,7 +86,7 @@ export function createInterpreterState(): InterpreterState {
 
 export type RunEvent =
   | { type: 'tick' }
-  | { type: 'input'; prompt: string | null }
+  | { type: 'input'; prompt: string | null; invalid?: boolean }
   | { type: 'menu'; title: string; options: { text: string; label: string }[] }
   | { type: 'pause' }
   | { type: 'done' }
@@ -97,6 +113,16 @@ const MAX_CALL_DEPTH = 60
 /** Resolves the source of another stored program, for `prgmNAME` calls. */
 export type ProgramResolver = (name: string) => string | undefined
 
+/**
+ * Internal signal for "what was typed isn't even a valid expression" during
+ * Input/Prompt — distinct from a TIError so the caller can choose to
+ * re-prompt instead of ending the program, the way real hardware does.
+ * Once the text DOES parse, any error while evaluating it (divide by zero,
+ * wrong type for the target, ...) is a real TIError and ends the program
+ * like any other runtime error.
+ */
+class InvalidEntrySignal extends Error {}
+
 class Runner {
   private cache = new Map<string, CompiledProgram>()
   private steps = 0
@@ -119,8 +145,12 @@ class Runner {
     }
   }
 
+  private numberFormatOpts(): NumberFormatOptions {
+    return { fixedDecimals: this.state.fixedDecimals, notation: this.state.notation }
+  }
+
   private dispValue(v: Value) {
-    dispLine(this.state.screen, formatValue(v))
+    dispLine(this.state.screen, formatValue(v, this.numberFormatOpts()))
   }
 
   private resolveCompiled(name: string): CompiledProgram {
@@ -172,6 +202,8 @@ class Runner {
         return this.evalPostfix(expr.op, expr.operand)
       case 'Call':
         return this.evalCall(expr.name, expr.args)
+      case 'ListLiteral':
+        return list(expr.elements.map((e) => requireNumber(this.evalExpr(e), 'a number in a list literal')))
     }
   }
 
@@ -227,7 +259,7 @@ class Runner {
     }
   }
 
-  private evalPostfix(op: '²' | '⁻¹' | '!', operand: Expr): Value {
+  private evalPostfix(op: '²' | '⁻¹' | '!' | '►Frac' | '►Dec', operand: Expr): Value {
     const v = this.evalExpr(operand)
     if (op === '²') return mapNumeric(v, (x) => checkFinite(x * x))
     if (op === '⁻¹') {
@@ -236,7 +268,15 @@ class Runner {
         return checkFinite(1 / x)
       })
     }
-    return mapNumeric(v, factorial)
+    if (op === '!') return mapNumeric(v, factorial)
+    if (op === '►Frac') return str(formatAsFraction(requireNumber(v, 'a number')))
+    // ►Dec: pass a number through unchanged, or parse a "n/d" ►Frac result back to decimal.
+    if (v.kind === 'number') return v
+    if (v.kind === 'string') {
+      const m = /^(-?\d+)\/(\d+)$/.exec(v.value.trim())
+      if (m) return num(Number(m[1]) / Number(m[2]))
+    }
+    throw new TIError('ERR:DATA TYPE', '►Dec requires a number or a "n/d" fraction')
   }
 
   private evalCall(name: string, argExprs: Expr[]): Value {
@@ -286,13 +326,38 @@ class Runner {
     }
   }
 
-  private parseInputText(text: string): Value {
+  /** Parses typed Input/Prompt text as a single expression, or throws InvalidEntrySignal. */
+  private parseInputExpr(text: string): Expr {
     const { program, diagnostics } = parse(text)
     const first = program.instructions[0]?.stmt
     if (diagnostics.length > 0 || program.instructions.length !== 1 || !first || first.kind !== 'Expr') {
-      throw new TIError('ERR:SYNTAX', 'Invalid entry')
+      throw new InvalidEntrySignal('Invalid entry')
     }
-    return this.evalExpr(first.expr)
+    return first.expr
+  }
+
+  /**
+   * Yields `input` events until the user provides text that actually
+   * parses as an expression, then evaluates and returns it. A parse
+   * failure re-prompts (with `invalid: true`) instead of ending the
+   * program; a failure while *evaluating* the (valid) expression — e.g.
+   * dividing by zero — is a real error and propagates normally.
+   */
+  private *readValue(prompt: string | null): Generator<RunEvent, Value, ResumeValue> {
+    let invalid = false
+    for (;;) {
+      const text = yield { type: 'input', prompt, invalid }
+      try {
+        const expr = this.parseInputExpr(String(text ?? ''))
+        return this.evalExpr(expr)
+      } catch (err) {
+        if (err instanceof InvalidEntrySignal) {
+          invalid = true
+          continue
+        }
+        throw err
+      }
+    }
   }
 
   // --- Statements --------------------------------------------------------
@@ -425,21 +490,20 @@ class Runner {
         if (row < 1 || row > SCREEN_ROWS || col < 1 || col > SCREEN_COLS) {
           throw new TIError('ERR:DOMAIN', `Output( row/col must be within 1-${SCREEN_ROWS} / 1-${SCREEN_COLS}`)
         }
-        writeAt(this.state.screen, row, col, formatValue(this.evalExpr(stmt.value)))
+        writeAt(this.state.screen, row, col, formatValue(this.evalExpr(stmt.value), this.numberFormatOpts()))
         yield { type: 'tick' }
         return { kind: 'next' }
       }
       case 'Input': {
-        const text = yield { type: 'input', prompt: stmt.target ? stmt.prompt : null }
-        const v = this.parseInputText(String(text ?? ''))
+        const v = yield* this.readValue(stmt.target ? stmt.prompt : null)
         if (stmt.target) this.assignTo(stmt.target, v)
         this.state.ans = v
         return { kind: 'next' }
       }
       case 'Prompt': {
         for (const target of stmt.targets) {
-          const text = yield { type: 'input', prompt: `${target.name}=?` }
-          this.assignTo(target, this.parseInputText(String(text ?? '')))
+          const v = yield* this.readValue(`${target.name}=?`)
+          this.assignTo(target, v)
         }
         return { kind: 'next' }
       }
@@ -460,6 +524,12 @@ class Runner {
         return { kind: 'call', name: stmt.name }
       case 'SetAngleMode':
         this.state.angleMode = stmt.mode
+        return { kind: 'next' }
+      case 'SetDecimalMode':
+        this.state.fixedDecimals = stmt.digits
+        return { kind: 'next' }
+      case 'SetNotation':
+        this.state.notation = stmt.mode
         return { kind: 'next' }
     }
   }

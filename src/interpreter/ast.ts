@@ -11,8 +11,9 @@ export type Expr =
   | { type: 'Euler' }
   | { type: 'Unary'; op: '-'; operand: Expr }
   | { type: 'Binary'; op: BinaryOp; left: Expr; right: Expr }
-  | { type: 'Postfix'; op: '²' | '⁻¹' | '!'; operand: Expr }
+  | { type: 'Postfix'; op: '²' | '⁻¹' | '!' | '►Frac' | '►Dec'; operand: Expr }
   | { type: 'Call'; name: string; args: Expr[] } // name is the canonical keyword, e.g. "sin("
+  | { type: 'ListLiteral'; elements: Expr[] } // {1,2,3}
 
 export type BinaryOp =
   | '+'
@@ -70,6 +71,8 @@ export type Stmt =
   | { kind: 'DelVar'; target: StoreTarget }
   | { kind: 'PrgmCall'; name: string }
   | { kind: 'SetAngleMode'; mode: 'degree' | 'radian' }
+  | { kind: 'SetDecimalMode'; digits: number | null } // Fix n (0-9), or Float (null)
+  | { kind: 'SetNotation'; mode: 'normal' | 'sci' | 'eng' }
 
 /** One instruction slot in the compiled, flat program. */
 export interface Instruction {

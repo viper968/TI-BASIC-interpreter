@@ -113,6 +113,16 @@ export function tokenize(source: string): LexResult {
       advance(1)
       continue
     }
+    if (ch === '{') {
+      push('LBRACE', '{', startLine, startCol)
+      advance(1)
+      continue
+    }
+    if (ch === '}') {
+      push('RBRACE', '}', startLine, startCol)
+      advance(1)
+      continue
+    }
     if (ch === '"') {
       let str = ''
       advance(1)
@@ -137,7 +147,7 @@ export function tokenize(source: string): LexResult {
       push('STRING', str, startLine, startCol)
       continue
     }
-    if (ch >= '0' && ch <= '9') {
+    if ((ch >= '0' && ch <= '9') || (ch === '.' && source[pos + 1] >= '0' && source[pos + 1] <= '9')) {
       let text = ''
       while (pos < len && source[pos] >= '0' && source[pos] <= '9') {
         text += source[pos]
@@ -262,7 +272,7 @@ export function tokenize(source: string): LexResult {
       continue
     }
 
-    if (/[A-Za-z]/.test(ch) || ch === 'θ' || ch === 'π' || ch === '√') {
+    if (/[A-Za-z]/.test(ch) || ch === 'θ' || ch === 'π' || ch === '√' || ch === '►') {
       // Greedy keyword match: try the longest known command/keyword spelling
       // at this position before falling back to variable rules. This is what
       // lets "For(" be a single token while "AB" still lexes as two

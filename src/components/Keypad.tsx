@@ -90,6 +90,9 @@ export function Keypad({ onInsert, onClear, onEnter }: Props) {
         <button className="keypad-key" onClick={() => onInsert('Ans')}>
           Ans
         </button>
+        <button className="keypad-key" onClick={() => onInsert('{')} title="List literal">
+          {'{ }'}
+        </button>
       </div>
       {showAlpha && (
         <div className="keypad-alpha-grid">

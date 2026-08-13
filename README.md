@@ -64,9 +64,10 @@ error can't be run.
 
 **Variables:** real variables `A`-`Z`/`θ`, strings `Str0`-`Str9`, lists
 `L1`-`L6` (including `L1(i)` element access, which auto-grows a list by
-one slot when you store to index `dim+1`, matching real behavior), `Ans`,
-`DelVar`, the `→` store arrow (type `->` if you don't have the glyph
-handy), and calling another saved program with `prgmNAME`.
+one slot when you store to index `dim+1`, matching real behavior, and
+`{1,2,3}` list-literal syntax), `Ans`, `DelVar`, the `→` store arrow (type
+`->` if you don't have the glyph handy), and calling another saved
+program with `prgmNAME`.
 
 **Expressions:** all the usual arithmetic/relational/logic operators,
 implicit multiplication (`2X`, `2(3+4)`, `AB`), correct TI operator
@@ -78,27 +79,69 @@ functions (`dim(`, `seq(`, `sum(`, `augment(`), and string functions
 (`length(`, `sub(`, plus `+` for concatenation). `Degree`/`Radian` switch
 the angle mode (default: Degree).
 
+**Display modes:** `Fix n` / `Float`, `Normal` / `Sci` / `Eng`, and
+`►Frac` / `►Dec` all work like the MODE menu and math-menu equivalents.
+`►Frac` is a deliberate simplification: it renders a fraction as text
+(only when one actually reproduces the value — an irrational-looking
+result like `π►Frac` is correctly left as a decimal instead of printing a
+misleading "exact" fraction) rather than adding a first-class fraction
+value type.
+
+**Interactive input:** if `Input`/`Prompt` text doesn't parse as an
+expression, the calculator re-prompts (mirroring real hardware) instead
+of ending the program; an entry that *parses* but fails when evaluated
+(`1/0`, wrong type for the target, ...) is still a real runtime error.
+
 Open the **Commands** tab in the app for the full, searchable list with
 syntax and descriptions — it's generated straight from
-`src/interpreter/commands.ts`.
-
-## Known limitations / roadmap
-
-This is a real subset, not a full emulator. Deliberately not implemented
-yet (and worth knowing about if a program uses them):
-
-- Matrices (`[A]`-`[J]`), complex numbers, statistics lists/plots, and all
-  graphing commands (`Y=`, `DispGraph`, `Line(`, ...).
-- User-created list names (only `L1`-`L6`).
-- `{1,2,3}` list-literal syntax — build lists with `seq(` or by assigning
-  elements one at a time (`1->L1(1)`, `2->L1(2)`, ...).
-- Re-prompting on a bad `Input`/`Prompt` entry — real hardware asks again;
-  here it raises `ERR:SYNTAX` instead.
-- A handful of rarely-used CATALOG-only commands.
+`src/interpreter/commands.ts`. The **Calculator** tab also shows a live
+**Variables** watch panel (real vars, strings, and lists currently holding
+a non-default value) while a program runs or is paused.
 
 A generous but finite execution-step cap guards against runaway loops
 freezing the browser tab (real hardware has no such limit, but a web page
 does need one).
+
+## Roadmap
+
+Ranked by (real-world usefulness) ÷ (implementation cost) — earlier items
+are more likely to land next.
+
+1. **Matrices** (`[A]`-`[J]`) — arithmetic, `det(`, inverse via `⁻¹`,
+   `transpose(`, `identity(`, `augment(`, and a small matrix editor.
+   Self-contained: extends the `Value` union, no new display model needed.
+2. **Statistics** — `1-Var Stats`/`2-Var Stats`, `LinReg(ax+b)` and other
+   regressions, `mean(`/`median(`/`stdDev(`/`variance(`, and distribution
+   functions (`normalcdf(`, `invNorm(`). All numeric output; doesn't
+   depend on graphing. Stat *plots* (scatter/box plots) are bundled into
+   the graphing phase below instead, since they need the pixel screen.
+3. **Graphing** — the big one. `Y1`-`Y9` function variables, window
+   variables (`Xmin`/`Xmax`/`Ymin`/`Ymax`/`Xscl`/`Yscl`), a 96×64 *pixel*
+   graph screen (a genuinely different display model from the 8×16 text
+   screen this app has today), function plotting, `DispGraph`, drawing
+   primitives (`Line(`, `Circle(`, `Pxl-On(`/`Pxl-Off(`/`pxl-Change(`,
+   `Shade(`), and ideally a trace cursor. Roughly as much work as
+   everything built so far, combined — sequenced after matrices/stats
+   since those are cheaper and don't block on it.
+4. **Complex numbers** — `i`, complex arithmetic, `a+bi`/`re^θi` display
+   modes. Touches more of the codebase than it looks (every math builtin
+   needs a complex-aware path or an explicit "still real-only" error), and
+   is less common in typical intro-level programs than matrices/stats, so
+   it's ranked after graphing rather than before it.
+5. **Long tail**, done opportunistically: `SortA(`/`SortD(`, `ClrList`,
+   `cumSum(`, `ΔList(`, `fill(`, `InString(`, calculus tools (`nDeriv(`,
+   `fnInt(`, `solve(`, `fMin(`/`fMax(`), user-named lists beyond `L1`-`L6`,
+   remaining CATALOG stragglers.
+
+**Permanently out of scope**, worth saying explicitly rather than leaving
+as an open question:
+
+- **ASM/App programs** — would need an actual Z80 CPU emulator running a
+  real (copyrighted) calculator ROM dump. That's a different project with
+  a different license situation, not a "feature" of a TI-BASIC
+  interpreter.
+- **Calculator-to-calculator linking** and **archive/RAM management
+  simulation** — hardware/OS plumbing with no real payoff here.
 
 ## Architecture notes
 

@@ -16,6 +16,7 @@ export type RunStatus = 'idle' | 'running' | 'input' | 'menu' | 'pause' | 'done'
 export interface PendingInput {
   type: 'input'
   prompt: string | null
+  invalid?: boolean
 }
 export interface PendingMenu {
   type: 'menu'
@@ -36,6 +37,8 @@ export function useCalculator() {
   const [pending, setPending] = useState<Pending>(null)
   const [error, setError] = useState<TIError | null>(null)
   const [vars, setVars] = useState<Record<string, number>>({})
+  const [strVars, setStrVars] = useState<Record<string, string>>({})
+  const [lists, setLists] = useState<Record<string, number[]>>({})
 
   const genRef = useRef<Generator<RunEvent, void, ResumeValue> | null>(null)
   const vmStateRef = useRef<InterpreterState | null>(null)
@@ -46,6 +49,8 @@ export function useCalculator() {
     if (!s) return
     setScreenRows([...s.screen.rows])
     setVars({ ...s.vars })
+    setStrVars({ ...s.strVars })
+    setLists({ ...s.lists })
   }, [])
 
   const settle = useCallback(
@@ -63,7 +68,7 @@ export function useCalculator() {
           break
         case 'input':
           setStatus('input')
-          setPending({ type: 'input', prompt: ev.prompt })
+          setPending({ type: 'input', prompt: ev.prompt, invalid: ev.invalid })
           break
         case 'menu':
           setStatus('menu')
@@ -155,5 +160,5 @@ export function useCalculator() {
     [pump],
   )
 
-  return { screenRows, status, pending, error, vars, runSource, resume, stop }
+  return { screenRows, status, pending, error, vars, strVars, lists, runSource, resume, stop }
 }

@@ -102,6 +102,8 @@ export const COMMANDS: CommandSpec[] = [
   { name: 'max(', category: 'math', kind: 'function', syntax: 'max(a,b) or max(list)', description: 'Larger of two values, or the maximum of a list.' },
   { name: 'gcd(', category: 'math', kind: 'function', syntax: 'gcd(a,b)', description: 'Greatest common divisor.' },
   { name: 'lcm(', category: 'math', kind: 'function', syntax: 'lcm(a,b)', description: 'Least common multiple.' },
+  { name: '►Frac', category: 'math', kind: 'operator', syntax: 'value►Frac', description: 'Displays value as a fraction (e.g. 0.5►Frac shows "1/2"). Simplified: returns fraction text, not a first-class fraction type.' },
+  { name: '►Dec', category: 'math', kind: 'operator', syntax: 'value►Dec', description: 'Converts a ►Frac result (or any number) back to decimal.' },
 
   // ---- Logic ---------------------------------------------------------------
   { name: 'and', category: 'logic', kind: 'operator', syntax: 'condition1 and condition2', description: 'Logical AND (non-zero is true).' },
@@ -116,6 +118,11 @@ export const COMMANDS: CommandSpec[] = [
   { name: 'prgm', category: 'misc', kind: 'statement', syntax: 'prgmNAME', description: 'Calls another stored program by name.' },
   { name: 'Degree', category: 'misc', kind: 'statement', syntax: 'Degree', description: 'Sets the angle mode to degrees (this interpreter’s default).' },
   { name: 'Radian', category: 'misc', kind: 'statement', syntax: 'Radian', description: 'Sets the angle mode to radians.' },
+  { name: 'Normal', category: 'misc', kind: 'statement', syntax: 'Normal', description: 'Sets display notation back to normal (this interpreter’s default).' },
+  { name: 'Sci', category: 'misc', kind: 'statement', syntax: 'Sci', description: 'Sets display notation to scientific, e.g. 1.23E4.' },
+  { name: 'Eng', category: 'misc', kind: 'statement', syntax: 'Eng', description: 'Sets display notation to engineering (exponent is always a multiple of 3).' },
+  { name: 'Fix', category: 'misc', kind: 'statement', syntax: 'Fix n', description: 'Displays numbers with exactly n (0-9) decimal places.' },
+  { name: 'Float', category: 'misc', kind: 'statement', syntax: 'Float', description: 'Displays numbers with automatic precision (this interpreter’s default).' },
 ]
 
 /** Words matched bare (no trailing "(") that also act as infix operators. */

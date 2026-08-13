@@ -17,35 +17,129 @@ export function isTruthy(v: Value): boolean {
   throw new TIError('ERR:DATA TYPE', `A ${v.kind} cannot be used as a condition`)
 }
 
+/** Display-mode settings, mirroring the TI-84's MODE screen (Fix/Float row, Normal/Sci/Eng row). */
+export interface NumberFormatOptions {
+  /** null/undefined = Float (automatic precision). 0-9 = Fix n (always that many decimal places). */
+  fixedDecimals?: number | null
+  notation?: 'normal' | 'sci' | 'eng'
+}
+
+function trimTrailingZeros(mantissa: string): string {
+  return mantissa.includes('.') ? mantissa.replace(/0+$/, '').replace(/\.$/, '') : mantissa
+}
+
+function toScientific(n: number, digits: number | null): string {
+  const d = digits ?? 9
+  const exp = n.toExponential(d)
+  const [mantissaRaw, expPart] = exp.split('e')
+  const mantissa = digits === null ? trimTrailingZeros(mantissaRaw) : mantissaRaw
+  return `${mantissa}E${parseInt(expPart, 10)}`
+}
+
+function toEngineering(n: number, digits: number | null): string {
+  if (n === 0) return `${(0).toFixed(digits ?? 0)}E0`
+  const sign = n < 0 ? -1 : 1
+  const abs = Math.abs(n)
+  let exp = Math.floor(Math.log10(abs))
+  exp -= ((exp % 3) + 3) % 3 // round down to the nearest multiple of 3
+  const d = digits ?? 9
+  let mantissaStr = ((sign * abs) / Math.pow(10, exp)).toFixed(d)
+  if (Math.abs(Number(mantissaStr)) >= 1000) {
+    // Rounding pushed the mantissa up a digit (e.g. 999.996 -> 1000.00): renormalize.
+    exp += 3
+    mantissaStr = ((sign * abs) / Math.pow(10, exp)).toFixed(d)
+  }
+  return `${digits === null ? trimTrailingZeros(mantissaStr) : mantissaStr}E${exp}`
+}
+
 /**
- * Approximates the TI-84's default "Float" display formatting: up to 10
- * significant digits, switching to scientific notation for very large or
- * very small magnitudes.
+ * Approximates the TI-84's number display formatting, honoring the
+ * Fix/Float and Normal/Sci/Eng MODE settings. With no options, this is the
+ * default "Float"/"Normal" behavior: up to 10 significant digits,
+ * switching to scientific notation for very large or very small magnitudes.
  */
-export function formatNumber(n: number): string {
+export function formatNumber(n: number, opts: NumberFormatOptions = {}): string {
+  const fixedDecimals = opts.fixedDecimals ?? null
+  const notation = opts.notation ?? 'normal'
+
   if (Number.isNaN(n)) return 'NaN'
   if (!Number.isFinite(n)) return n > 0 ? '1E99' : '-1E99'
+
+  if (notation === 'sci') return stripLeadingZero(toScientific(n, fixedDecimals))
+  if (notation === 'eng') return stripLeadingZero(toEngineering(n, fixedDecimals))
+
+  // notation === 'normal'
+  if (fixedDecimals !== null) {
+    const abs = Math.abs(n)
+    if (n !== 0 && (abs >= 1e10 || abs < 1e-3)) return stripLeadingZero(toScientific(n, fixedDecimals))
+    return stripLeadingZero(n.toFixed(fixedDecimals))
+  }
   if (n === 0) return '0'
   const abs = Math.abs(n)
-  const useSci = abs >= 1e10 || abs < 1e-3
-  if (useSci) {
-    const exp = n.toExponential(9)
-    const [mantissaRaw, expPart] = exp.split('e')
-    const mantissa = mantissaRaw.includes('.') ? mantissaRaw.replace(/0+$/, '').replace(/\.$/, '') : mantissaRaw
-    return `${mantissa}E${parseInt(expPart, 10)}`
-  }
-  const rounded = Number(n.toPrecision(10))
-  return String(rounded)
+  if (abs >= 1e10 || abs < 1e-3) return stripLeadingZero(toScientific(n, null))
+  return stripLeadingZero(String(Number(n.toPrecision(10))))
 }
 
-export function formatList(values: number[]): string {
-  return `{${values.map(formatNumber).join(' ')}}`
+/** TI-84 displays magnitudes under 1 without the leading 0, e.g. ".5" and "-.25". */
+function stripLeadingZero(s: string): string {
+  return s.replace(/^(-?)0(\.\d)/, '$1$2')
 }
 
-export function formatValue(v: Value): string {
-  if (v.kind === 'number') return formatNumber(v.value)
+export function formatList(values: number[], opts: NumberFormatOptions = {}): string {
+  return `{${values.map((v) => formatNumber(v, opts)).join(' ')}}`
+}
+
+export function formatValue(v: Value, opts: NumberFormatOptions = {}): string {
+  if (v.kind === 'number') return formatNumber(v.value, opts)
   if (v.kind === 'string') return v.value
-  return formatList(v.value)
+  return formatList(v.value, opts)
+}
+
+/**
+ * Approximates a decimal as a fraction p/q via a continued-fraction
+ * expansion, the way ►Frac does on-calculator. Bounded so it gives up and
+ * returns the decimal's best rational approximation rather than searching
+ * forever for numbers that aren't "nice" fractions.
+ */
+export function toFraction(x: number, maxDenominator = 10000, tolerance = 1e-10): [number, number] {
+  const sign = x < 0 ? -1 : 1
+  const abs = Math.abs(x)
+  let h1 = 1
+  let h2 = 0
+  let k1 = 0
+  let k2 = 1
+  let b = abs
+  for (let i = 0; i < 64; i++) {
+    const a = Math.floor(b)
+    const nextH1 = a * h1 + h2
+    const nextK1 = a * k1 + k2
+    // Stop *before* accepting a convergent whose denominator blows the
+    // bound, so the result is the best approximation within the bound
+    // rather than the first one that happens to exceed it.
+    if (nextK1 > maxDenominator) break
+    h2 = h1
+    h1 = nextH1
+    k2 = k1
+    k1 = nextK1
+    if (Math.abs(b - a) < tolerance) break
+    b = 1 / (b - a)
+  }
+  return [sign * h1, k1]
+}
+
+/**
+ * ►Frac: shows a fraction only when one actually reproduces the value (to
+ * display precision) within a small denominator — the same spirit as the
+ * calculator giving up and leaving an irrational-looking value as a
+ * decimal instead of printing a misleading "exact" fraction for it.
+ */
+export function formatAsFraction(x: number): string {
+  if (x === 0) return '0'
+  const [numerator, denominator] = toFraction(x)
+  if (denominator <= 1) return formatNumber(x)
+  const reconstructed = numerator / denominator
+  if (Math.abs(reconstructed - x) > Math.max(1e-9, Math.abs(x) * 1e-9)) return formatNumber(x)
+  return `${numerator}/${denominator}`
 }
 
 /**
