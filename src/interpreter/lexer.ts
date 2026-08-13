@@ -1,6 +1,6 @@
 import type { Diagnostic } from './errors'
 import type { Token, TokenType } from './tokens'
-import { COMMANDS } from './commands'
+import { COMMANDS, STAT_VAR_NAMES } from './commands'
 
 interface KeywordEntry {
   match: string
@@ -20,6 +20,8 @@ const EXCLUDED_FROM_KEYWORD_TABLE = new Set([
   'e^(', // == EULER CARET LPAREN, no special token needed
   '*row(', // starts with '*', matched explicitly before the generic STAR check
   '*row+(', // ditto
+  '1-Var Stats', // starts with a digit, matched explicitly before number lexing
+  '2-Var Stats', // ditto
 ])
 
 function buildKeywordTable(): KeywordEntry[] {
@@ -31,11 +33,15 @@ function buildKeywordTable(): KeywordEntry[] {
     { match: 'e', type: 'EULER', text: 'e' },
   ]
   for (const cmd of COMMANDS) {
+    // Statistics/regression results (n, a, b, r, MeanX, Σx, ...) behave like
+    // ordinary variables — readable, writable, implicit-multiplication-
+    // eligible — so they get the VAR token type instead of KEYWORD.
+    const type: TokenType = STAT_VAR_NAMES.has(cmd.name) ? 'VAR' : 'KEYWORD'
     if (!EXCLUDED_FROM_KEYWORD_TABLE.has(cmd.name)) {
-      entries.push({ match: cmd.name, type: 'KEYWORD', text: cmd.name })
+      entries.push({ match: cmd.name, type, text: cmd.name })
     }
     for (const alias of cmd.aliases ?? []) {
-      entries.push({ match: alias, type: 'KEYWORD', text: cmd.name })
+      entries.push({ match: alias, type, text: cmd.name })
     }
   }
   // Longest match wins, so greedy scanning finds e.g. "For(" before "F".
@@ -93,6 +99,18 @@ export function tokenize(source: string): LexResult {
     }
     if (ch === ' ' || ch === '\t') {
       advance(1)
+      continue
+    }
+    // "1-Var Stats" / "2-Var Stats" start with a digit, so they must be
+    // checked before the generic number-lexing branch claims the "1"/"2".
+    if (source.startsWith('1-Var Stats', pos)) {
+      push('KEYWORD', '1-Var Stats', startLine, startCol)
+      advance('1-Var Stats'.length)
+      continue
+    }
+    if (source.startsWith('2-Var Stats', pos)) {
+      push('KEYWORD', '2-Var Stats', startLine, startCol)
+      advance('2-Var Stats'.length)
       continue
     }
     if (ch === ':') {
@@ -304,7 +322,7 @@ export function tokenize(source: string): LexResult {
       continue
     }
 
-    if (/[A-Za-z]/.test(ch) || ch === 'θ' || ch === 'π' || ch === '√' || ch === '►') {
+    if (/[A-Za-z]/.test(ch) || ch === 'θ' || ch === 'π' || ch === '√' || ch === '►' || ch === 'Σ' || ch === 'σ') {
       // Greedy keyword match: try the longest known command/keyword spelling
       // at this position before falling back to variable rules. This is what
       // lets "For(" be a single token while "AB" still lexes as two

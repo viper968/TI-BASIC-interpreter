@@ -508,3 +508,132 @@ describe('vm: matrices', () => {
     expect(r.error?.code).toBe('ERR:DATA TYPE')
   })
 })
+
+describe('vm: list stat functions', () => {
+  it('computes mean(, median(, stdDev(, variance(, prod(', () => {
+    const r = run(
+      [
+        '{2,4,4,4,5,5,7,9}->L1',
+        'mean(L1)->M',
+        'median(L1)->D',
+        'stdDev(L1)->S',
+        'variance(L1)->V',
+        '{1,2,3,4}->L2',
+        'prod(L2)->P',
+      ].join('\n'),
+    )
+    expect(r.error).toBeNull()
+    expect(r.state.vars.M).toBeCloseTo(5)
+    expect(r.state.vars.D).toBeCloseTo(4.5)
+    expect(r.state.vars.S).toBeCloseTo(2.13809, 4)
+    expect(r.state.vars.V).toBeCloseTo(2.13809 ** 2, 3)
+    expect(r.state.vars.P).toBe(24)
+  })
+
+  it('weights mean(/stdDev(/variance( by an optional frequency list', () => {
+    const r = run('{1,2}->L1\n{3,1}->L2\nmean(L1,L2)->M')
+    expect(r.error).toBeNull()
+    expect(r.state.vars.M).toBeCloseTo(1.25)
+  })
+
+  it('rejects a mismatched frequency list length', () => {
+    const r = run('{1,2,3}->L1\n{1,1}->L2\nmean(L1,L2)')
+    expect(r.error?.code).toBe('ERR:DIM MISMATCH')
+  })
+
+  it('computes normalcdf( and invNorm(, and they round-trip', () => {
+    const r = run('normalcdf(-1E99,1.96)->P\ninvNorm(.975)->Z')
+    expect(r.error).toBeNull()
+    expect(r.state.vars.P).toBeCloseTo(0.975, 3)
+    expect(r.state.vars.Z).toBeCloseTo(1.95996, 3)
+  })
+})
+
+describe('vm: 1-Var Stats / 2-Var Stats / LinReg', () => {
+  it('computes the full 1-Var Stats result set', () => {
+    const r = run('{2,4,4,4,5,5,7,9}->L1\n1-Var Stats L1')
+    expect(r.error).toBeNull()
+    expect(r.state.vars.n).toBe(8)
+    expect(r.state.vars.MeanX).toBeCloseTo(5)
+    expect(r.state.vars['Σx']).toBeCloseTo(40)
+    expect(r.state.vars['Σx²']).toBeCloseTo(232)
+    expect(r.state.vars.Sx).toBeCloseTo(2.13809, 4)
+    expect(r.state.vars['σx']).toBeCloseTo(2.0, 4)
+    expect(r.state.vars.MinX).toBe(2)
+    expect(r.state.vars.Q1).toBe(4)
+    expect(r.state.vars.Med).toBe(4.5)
+    expect(r.state.vars.Q3).toBe(6)
+    expect(r.state.vars.MaxX).toBe(9)
+  })
+
+  it('defaults 1-Var Stats to L1 when no list is given', () => {
+    const r = run('{10,20,30}->L1\n1-Var Stats')
+    expect(r.error).toBeNull()
+    expect(r.state.vars.MeanX).toBeCloseTo(20)
+  })
+
+  it('applies an optional frequency list to 1-Var Stats', () => {
+    const r = run('{1,2}->L1\n{3,1}->L2\n1-Var Stats L1,L2')
+    expect(r.error).toBeNull()
+    expect(r.state.vars.n).toBe(4)
+    expect(r.state.vars.MeanX).toBeCloseTo(1.25)
+  })
+
+  it('rejects 1-Var Stats on an empty list', () => {
+    const r = run('1-Var Stats L3')
+    expect(r.error?.code).toBe('ERR:DOMAIN')
+  })
+
+  it('computes the full 2-Var Stats result set', () => {
+    const r = run('{1,2,3,4,5}->L1\n{2,4,6,8,10}->L2\n2-Var Stats L1,L2')
+    expect(r.error).toBeNull()
+    expect(r.state.vars.n).toBe(5)
+    expect(r.state.vars.MeanX).toBeCloseTo(3)
+    expect(r.state.vars.MeanY).toBeCloseTo(6)
+    expect(r.state.vars['Σx']).toBeCloseTo(15)
+    expect(r.state.vars['Σy']).toBeCloseTo(30)
+    expect(r.state.vars['Σx²']).toBeCloseTo(55)
+    expect(r.state.vars['Σy²']).toBeCloseTo(220)
+    expect(r.state.vars['Σxy']).toBeCloseTo(110)
+    expect(r.state.vars.Sx).toBeCloseTo(1.58114, 4)
+    expect(r.state.vars.Sy).toBeCloseTo(3.16228, 4)
+    expect(r.state.vars['σx']).toBeCloseTo(1.41421, 4)
+    expect(r.state.vars['σy']).toBeCloseTo(2.82843, 4)
+    expect(r.state.vars.MinY).toBe(2)
+    expect(r.state.vars.MaxY).toBe(10)
+  })
+
+  it('rejects 2-Var Stats when the lists have different lengths', () => {
+    const r = run('{1,2,3}->L1\n{1,2}->L2\n2-Var Stats L1,L2')
+    expect(r.error?.code).toBe('ERR:DIM MISMATCH')
+  })
+
+  it('fits an exact line with LinReg(ax+b) and lets r² be written as r²', () => {
+    const r = run('{1,2,3,4,5}->L1\n{3,5,7,9,11}->L2\nLinReg(ax+b) L1,L2\nDisp r²')
+    expect(r.error).toBeNull()
+    expect(r.state.vars.a).toBeCloseTo(2)
+    expect(r.state.vars.b).toBeCloseTo(1)
+    expect(r.state.vars.r).toBeCloseTo(1)
+    expect(r.screenText.split('\n')[0]).toBe('1')
+  })
+
+  it('defaults LinReg(ax+b) to L1,L2', () => {
+    const r = run('{1,2,3}->L1\n{2,4,6}->L2\nLinReg(ax+b)')
+    expect(r.error).toBeNull()
+    expect(r.state.vars.a).toBeCloseTo(2)
+    expect(r.state.vars.b).toBeCloseTo(0)
+  })
+
+  it('rejects LinReg with only one distinct x-value', () => {
+    const r = run('{5,5,5}->L1\n{1,2,3}->L2\nLinReg(ax+b)')
+    expect(r.error?.code).toBe('ERR:DOMAIN')
+  })
+
+  it('treats stat-result variables as ordinary read/write variables', () => {
+    // Nothing stops a program from just storing into them directly too.
+    const r = run('42->MeanX\nDisp MeanX')
+    expect(r.error).toBeNull()
+    expect(r.state.vars.MeanX).toBe(42)
+    expect(r.screenText.split('\n')[0]).toBe('42')
+  })
+})

@@ -76,6 +76,31 @@ const SAMPLE_PROGRAMS: Omit<StoredProgram, 'id' | 'updatedAt'>[] = [
       'Disp [B](2,3)',
     ].join('\n'),
   },
+  {
+    name: 'STATS',
+    source: [
+      'ClrHome',
+      '{78,85,92,88,76,95,81}->L1',
+      '1-Var Stats L1',
+      'Disp "TEST SCORES"',
+      'Disp "MEAN="',
+      'Disp round(MeanX,1)',
+      'Disp "STDDEV="',
+      'Disp round(Sx,2)',
+      'Disp "MEDIAN="',
+      'Disp Med',
+      'Pause',
+      'ClrHome',
+      '{1,2,3,4,5}->L1',
+      '{52,58,63,70,74}->L2',
+      'LinReg(ax+b) L1,L2',
+      'Disp "HOURS VS SCORE"',
+      'Disp "SLOPE="',
+      'Disp round(a,2)',
+      'Disp "R="',
+      'Disp round(r,3)',
+    ].join('\n'),
+  },
 ]
 
 function loadPrograms(): StoredProgram[] {

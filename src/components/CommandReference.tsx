@@ -7,6 +7,7 @@ const CATEGORY_LABELS: Record<CommandCategory, string> = {
   variable: 'Variables',
   list: 'Lists',
   matrix: 'Matrices',
+  stats: 'Statistics',
   string: 'Strings',
   math: 'Math',
   logic: 'Logic',

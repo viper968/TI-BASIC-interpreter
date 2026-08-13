@@ -22,8 +22,10 @@ import {
   str,
 } from './values'
 import * as mat from './matrix'
+import * as stats from './stats'
 import { BUILTINS, type AngleMode, type BuiltinCtx, factorial } from './builtins'
 import { SCREEN_COLS, SCREEN_ROWS, type Screen, clearScreen, createScreen, dispLine, writeAt } from './screen'
+import { STAT_VAR_NAMES } from './commands'
 
 // ---------------------------------------------------------------------------
 // Compilation
@@ -68,6 +70,7 @@ export interface InterpreterState {
 export function createInterpreterState(): InterpreterState {
   const vars: Record<string, number> = {}
   for (const n of REAL_VAR_NAMES) vars[n] = 0
+  for (const n of STAT_VAR_NAMES) vars[n] = 0
   const strVars: Record<string, string> = {}
   for (const n of STR_VAR_NAMES) strVars[n] = ''
   const lists: Record<string, number[]> = {}
@@ -483,6 +486,33 @@ class Runner {
     }
   }
 
+  // --- Statistics helpers --------------------------------------------------
+
+  private resolveFreqList(name: string | null, expectedLength: number): number[] | undefined {
+    if (!name) return undefined
+    const w = this.state.lists[name] ?? []
+    if (w.length !== expectedLength) {
+      throw new TIError('ERR:DIM MISMATCH', 'Frequency list must be the same length as the data list')
+    }
+    return w
+  }
+
+  /** Computes and stores the 1-Var Stats result set (n, MeanX, Σx, Σx², Sx, σx, MinX, Q1, Med, Q3, MaxX). */
+  private storeOneVarResults(xs: number[], w?: number[]) {
+    this.state.vars['n'] = w ? w.reduce((a, b) => a + b, 0) : xs.length
+    this.state.vars['MeanX'] = stats.mean(xs, w)
+    this.state.vars['Σx'] = stats.sumWeighted(xs, w)
+    this.state.vars['Σx²'] = stats.sumWeighted(xs.map((x) => x * x), w)
+    this.state.vars['Sx'] = stats.stdDev(xs, w)
+    this.state.vars['σx'] = stats.populationStdDev(xs, w)
+    const q = stats.quartiles(stats.sortedExpand(xs, w))
+    this.state.vars['MinX'] = q.min
+    this.state.vars['Q1'] = q.q1
+    this.state.vars['Med'] = q.med
+    this.state.vars['Q3'] = q.q3
+    this.state.vars['MaxX'] = q.max
+  }
+
   // --- Statements --------------------------------------------------------
 
   private *execStatement(
@@ -661,6 +691,46 @@ class Runner {
           }
           this.state.matrices[stmt.target.name] = m.map((row) => row.map(() => n))
         }
+        return { kind: 'next' }
+      }
+      case 'OneVarStats': {
+        const xs = this.state.lists[stmt.xList] ?? []
+        if (xs.length === 0) throw new TIError('ERR:DOMAIN', `${stmt.xList} has no data`)
+        const w = this.resolveFreqList(stmt.freqList, xs.length)
+        this.storeOneVarResults(xs, w)
+        return { kind: 'next' }
+      }
+      case 'TwoVarStats': {
+        const xs = this.state.lists[stmt.xList] ?? []
+        const ys = this.state.lists[stmt.yList] ?? []
+        if (xs.length === 0 || ys.length === 0) throw new TIError('ERR:DOMAIN', 'Both lists must have data')
+        if (xs.length !== ys.length) throw new TIError('ERR:DIM MISMATCH', 'Xlist and Ylist must be the same length')
+        const w = this.resolveFreqList(stmt.freqList, xs.length)
+        this.storeOneVarResults(xs, w)
+        this.state.vars['MeanY'] = stats.mean(ys, w)
+        this.state.vars['Σy'] = stats.sumWeighted(ys, w)
+        this.state.vars['Σy²'] = stats.sumWeighted(
+          ys.map((y) => y * y),
+          w,
+        )
+        this.state.vars['Σxy'] = xs.reduce((acc, x, i) => acc + x * ys[i] * (w ? w[i] : 1), 0)
+        this.state.vars['Sy'] = stats.stdDev(ys, w)
+        this.state.vars['σy'] = stats.populationStdDev(ys, w)
+        const [minY, maxY] = stats.minMax(ys, w)
+        this.state.vars['MinY'] = minY
+        this.state.vars['MaxY'] = maxY
+        return { kind: 'next' }
+      }
+      case 'LinReg': {
+        const xs = this.state.lists[stmt.xList] ?? []
+        const ys = this.state.lists[stmt.yList] ?? []
+        if (xs.length === 0 || ys.length === 0) throw new TIError('ERR:DOMAIN', 'Both lists must have data')
+        if (xs.length !== ys.length) throw new TIError('ERR:DIM MISMATCH', 'Xlist and Ylist must be the same length')
+        const w = this.resolveFreqList(stmt.freqList, xs.length)
+        const { a, b, r } = stats.linreg(xs, ys, w)
+        this.state.vars['a'] = a
+        this.state.vars['b'] = b
+        this.state.vars['r'] = r
         return { kind: 'next' }
       }
       case 'PrgmCall':

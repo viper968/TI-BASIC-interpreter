@@ -35,6 +35,10 @@ own dialects and command sets; this project doesn't try to emulate those.
   - `matrix.ts` — matrix math (add/multiply/inverse/`det(`/`rref(`/row
     operations/...) as plain `number[][]` functions, kept independent of
     TI-BASIC syntax; `vm.ts` and `builtins.ts` are its only callers.
+  - `stats.ts` — descriptive statistics, linear regression, and the normal
+    distribution (mean/median/stdDev/quartiles/`linreg`/`normalCdf01`/
+    `invNormStd`) as plain `number[]` functions, same independence as
+    `matrix.ts`.
 - **`src/components/`, `src/state/`, `src/App.tsx`** — the React GUI: a
   program manager, a syntax-highlighted code editor with live diagnostics,
   a TI-84-style calculator screen that actually runs programs (including
@@ -105,6 +109,22 @@ and `rref(` (the usual way to solve a system of equations — see the
 `*row+(`, and resizing either a list or a matrix by storing dimensions
 into `dim(` (`{5}->dim(L1)`, `{2,3}->dim([A])`) followed by `Fill(`.
 
+**Statistics:** the list functions `mean(`, `median(`, `stdDev(` (sample),
+`variance(` (sample), and `prod(`, each optionally weighted by a second
+"frequency list" argument (`mean(L1,L2)`); `1-Var Stats [Xlist[,Freqlist]]`
+and `2-Var Stats [Xlist,Ylist[,Freqlist]]` (defaulting to `L1`/`L2`),
+which compute the usual summary statistics into `n`, `MeanX`, `Σx`, `Σx²`,
+`Sx`, `σx`, `MinX`, `Q1`, `Med`, `Q3`, `MaxX` (plus `MeanY`, `Σy`, `Σy²`,
+`Σxy`, `Sy`, `σy`, `MinY`, `MaxY` for 2-Var); `LinReg(ax+b) [Xlist,Ylist[,Freqlist]]`,
+which fits a least-squares line into `a`, `b`, `r` (square `r` yourself
+for r² — `r²` — rather than a separate stored value); and the normal
+distribution functions `normalcdf(` / `invNorm(`. `MeanX`/`MeanY` are
+simplified ASCII names for the on-calculator x̄/ȳ (which use a
+keyboard-untypable combining-macron glyph); everything else — `n`, `a`,
+`b`, `r`, `Σx`, `σx`, ... — is exactly the real reserved name, behaving
+like an ordinary variable (readable, writable, usable in expressions)
+rather than a special AST node. See the `STATS` sample program.
+
 Open the **Commands** tab in the app for the full, searchable list with
 syntax and descriptions — it's generated straight from
 `src/interpreter/commands.ts`. The **Calculator** tab also shows a live
@@ -121,19 +141,18 @@ Ranked by (real-world usefulness) ÷ (implementation cost) — earlier items
 are more likely to land next.
 
 1. ~~**Matrices**~~ — done: see "Supported language" above.
-2. **Statistics** — `1-Var Stats`/`2-Var Stats`, `LinReg(ax+b)` and other
-   regressions, `mean(`/`median(`/`stdDev(`/`variance(`, and distribution
-   functions (`normalcdf(`, `invNorm(`). All numeric output; doesn't
-   depend on graphing. Stat *plots* (scatter/box plots) are bundled into
-   the graphing phase below instead, since they need the pixel screen.
+2. ~~**Statistics**~~ — done: see "Supported language" above. (Stat *plots* —
+   scatter/box plots — are deliberately excluded from this and bundled
+   into the graphing phase below instead, since they need the pixel
+   screen; other regression types besides `LinReg(ax+b)`, e.g. `QuadReg`/
+   `CubicReg`, are still long-tail.)
 3. **Graphing** — the big one. `Y1`-`Y9` function variables, window
    variables (`Xmin`/`Xmax`/`Ymin`/`Ymax`/`Xscl`/`Yscl`), a 96×64 *pixel*
    graph screen (a genuinely different display model from the 8×16 text
    screen this app has today), function plotting, `DispGraph`, drawing
    primitives (`Line(`, `Circle(`, `Pxl-On(`/`Pxl-Off(`/`pxl-Change(`,
    `Shade(`), and ideally a trace cursor. Roughly as much work as
-   everything built so far, combined — sequenced after stats since that's
-   cheaper and doesn't block on it.
+   everything built so far, combined.
 4. **Complex numbers** — `i`, complex arithmetic, `a+bi`/`re^θi` display
    modes. Touches more of the codebase than it looks (every math builtin
    needs a complex-aware path or an explicit "still real-only" error), and
@@ -141,8 +160,9 @@ are more likely to land next.
    it's ranked after graphing rather than before it.
 5. **Long tail**, done opportunistically: `SortA(`/`SortD(`, `ClrList`,
    `cumSum(`, `ΔList(`, `InString(`, calculus tools (`nDeriv(`, `fnInt(`,
-   `solve(`, `fMin(`/`fMax(`), user-named lists beyond `L1`-`L6`, remaining
-   CATALOG stragglers.
+   `solve(`, `fMin(`/`fMax(`), other regression types (`QuadReg`,
+   `CubicReg`, ...), user-named lists beyond `L1`-`L6`, remaining CATALOG
+   stragglers.
 
 **Permanently out of scope**, worth saying explicitly rather than leaving
 as an open question:

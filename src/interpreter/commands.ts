@@ -10,8 +10,8 @@
  *
  * Scope: TI-84 Plus / TI-84 Plus Silver Edition TI-BASIC (MathPrint off,
  * classic OS, monochrome). Notably NOT included (see README "Roadmap"):
- * complex numbers, statistics, stat lists/plots, graphing commands, apps,
- * user-created list names, and CATALOG-only rarely used commands.
+ * complex numbers, stat plots, graphing commands, apps, user-created list
+ * names, and CATALOG-only rarely used commands.
  */
 
 export type CommandCategory =
@@ -20,6 +20,7 @@ export type CommandCategory =
   | 'variable'
   | 'list'
   | 'matrix'
+  | 'stats'
   | 'string'
   | 'math'
   | 'logic'
@@ -75,6 +76,7 @@ export const COMMANDS: CommandSpec[] = [
   { name: 'dim(', category: 'list', kind: 'function', syntax: 'dim(list) or dim(matrix)', description: 'Returns the number of elements in a list, or {rows,cols} for a matrix. Also usable as a store target — {n}->dim(L1) resizes L1, and {r,c}->dim([A]) resizes [A] (zero-filling new slots).' },
   { name: 'seq(', category: 'list', kind: 'function', syntax: 'seq(expr,var,start,end[,step])', description: 'Builds a list by evaluating expr for var stepping from start to end.' },
   { name: 'sum(', category: 'list', kind: 'function', syntax: 'sum(list)', description: 'Returns the sum of all elements in a list.' },
+  { name: 'prod(', category: 'list', kind: 'function', syntax: 'prod(list)', description: 'Returns the product of all elements in a list.' },
   { name: 'augment(', category: 'list', kind: 'function', syntax: 'augment(list1,list2) or augment(matrixA,matrixB)', description: 'Concatenates two lists, or two matrices with the same row count (side by side).' },
   { name: 'Fill(', category: 'list', kind: 'statement', syntax: 'Fill(value,list) or Fill(value,matrix)', description: 'Overwrites every element of an already-sized list or matrix with value.' },
 
@@ -90,6 +92,39 @@ export const COMMANDS: CommandSpec[] = [
   { name: 'row+(', category: 'matrix', kind: 'function', syntax: 'row+(matrix,rowA,rowB)', description: 'Returns a copy of matrix with rowA added into rowB.' },
   { name: '*row(', category: 'matrix', kind: 'function', syntax: '*row(value,matrix,row)', description: 'Returns a copy of matrix with row scaled by value.' },
   { name: '*row+(', category: 'matrix', kind: 'function', syntax: '*row+(value,matrix,rowA,rowB)', description: 'Returns a copy of matrix with value*rowA added into rowB.' },
+
+  // ---- Statistics ---------------------------------------------------------------
+  { name: 'mean(', category: 'stats', kind: 'function', syntax: 'mean(list[,freqlist])', description: 'Arithmetic mean of a list, optionally weighted by a frequency list.' },
+  { name: 'median(', category: 'stats', kind: 'function', syntax: 'median(list)', description: 'Median of a list.' },
+  { name: 'stdDev(', category: 'stats', kind: 'function', syntax: 'stdDev(list[,freqlist])', description: 'Sample standard deviation (divides by n-1).' },
+  { name: 'variance(', category: 'stats', kind: 'function', syntax: 'variance(list[,freqlist])', description: 'Sample variance (divides by n-1).' },
+  { name: '1-Var Stats', category: 'stats', kind: 'statement', syntax: '1-Var Stats [Xlist[,Freqlist]]', description: 'Computes one-variable summary statistics for Xlist (default L1) and stores them into n, MeanX, Σx, Σx², Sx, σx, MinX, Q1, Med, Q3, MaxX.' },
+  { name: '2-Var Stats', category: 'stats', kind: 'statement', syntax: '2-Var Stats [Xlist,Ylist[,Freqlist]]', description: 'Computes two-variable summary statistics for Xlist,Ylist (default L1,L2) and stores them into the 1-Var results plus MeanY, Σy, Σy², Σxy, Sy, σy, MinY, MaxY.' },
+  { name: 'LinReg(ax+b)', category: 'stats', kind: 'statement', syntax: 'LinReg(ax+b) [Xlist,Ylist[,Freqlist]]', description: 'Fits a least-squares line y=ax+b to Xlist,Ylist (default L1,L2) and stores the result into a, b, r. (Storing the equation into a Y-variable is not supported yet — no graphing.)' },
+  { name: 'normalcdf(', category: 'stats', kind: 'function', syntax: 'normalcdf(lower,upper[,μ,σ])', description: 'Area under the normal curve between lower and upper (default μ=0,σ=1).' },
+  { name: 'invNorm(', category: 'stats', kind: 'function', syntax: 'invNorm(area[,μ,σ])', description: 'The x-value where the normal CDF equals area (default μ=0,σ=1).' },
+  { name: 'n', category: 'stats', kind: 'constant', syntax: 'n', description: 'Number of data points from the last 1-Var Stats / 2-Var Stats.' },
+  { name: 'a', category: 'stats', kind: 'constant', syntax: 'a', description: 'Slope from the last LinReg(ax+b).' },
+  { name: 'b', category: 'stats', kind: 'constant', syntax: 'b', description: 'Intercept from the last LinReg(ax+b).' },
+  { name: 'r', category: 'stats', kind: 'constant', syntax: 'r', description: 'Correlation coefficient from the last LinReg(ax+b) (square it yourself for r²: r²).' },
+  { name: 'MeanX', category: 'stats', kind: 'constant', syntax: 'MeanX', description: 'Mean of x from the last 1-Var/2-Var Stats. (Simplified name for the on-calculator x̄.)' },
+  { name: 'Σx', aliases: ['Sumx'], category: 'stats', kind: 'constant', syntax: 'Σx', description: 'Sum of x from the last 1-Var/2-Var Stats.' },
+  { name: 'Σx²', aliases: ['Sumx2'], category: 'stats', kind: 'constant', syntax: 'Σx²', description: 'Sum of x² from the last 1-Var/2-Var Stats.' },
+  { name: 'Sx', category: 'stats', kind: 'constant', syntax: 'Sx', description: 'Sample standard deviation of x from the last 1-Var/2-Var Stats.' },
+  { name: 'σx', aliases: ['sigmax'], category: 'stats', kind: 'constant', syntax: 'σx', description: 'Population standard deviation of x from the last 1-Var/2-Var Stats.' },
+  { name: 'MinX', category: 'stats', kind: 'constant', syntax: 'MinX', description: 'Minimum of x from the last 1-Var/2-Var Stats.' },
+  { name: 'Q1', category: 'stats', kind: 'constant', syntax: 'Q1', description: 'First quartile of x from the last 1-Var Stats.' },
+  { name: 'Med', category: 'stats', kind: 'constant', syntax: 'Med', description: 'Median of x from the last 1-Var Stats.' },
+  { name: 'Q3', category: 'stats', kind: 'constant', syntax: 'Q3', description: 'Third quartile of x from the last 1-Var Stats.' },
+  { name: 'MaxX', category: 'stats', kind: 'constant', syntax: 'MaxX', description: 'Maximum of x from the last 1-Var/2-Var Stats.' },
+  { name: 'MeanY', category: 'stats', kind: 'constant', syntax: 'MeanY', description: 'Mean of y from the last 2-Var Stats. (Simplified name for the on-calculator ȳ.)' },
+  { name: 'Σy', aliases: ['Sumy'], category: 'stats', kind: 'constant', syntax: 'Σy', description: 'Sum of y from the last 2-Var Stats.' },
+  { name: 'Σy²', aliases: ['Sumy2'], category: 'stats', kind: 'constant', syntax: 'Σy²', description: 'Sum of y² from the last 2-Var Stats.' },
+  { name: 'Σxy', aliases: ['Sumxy'], category: 'stats', kind: 'constant', syntax: 'Σxy', description: 'Sum of x*y from the last 2-Var Stats.' },
+  { name: 'Sy', category: 'stats', kind: 'constant', syntax: 'Sy', description: 'Sample standard deviation of y from the last 2-Var Stats.' },
+  { name: 'σy', aliases: ['sigmay'], category: 'stats', kind: 'constant', syntax: 'σy', description: 'Population standard deviation of y from the last 2-Var Stats.' },
+  { name: 'MinY', category: 'stats', kind: 'constant', syntax: 'MinY', description: 'Minimum of y from the last 2-Var Stats.' },
+  { name: 'MaxY', category: 'stats', kind: 'constant', syntax: 'MaxY', description: 'Maximum of y from the last 2-Var Stats.' },
 
   // ---- Strings ---------------------------------------------------------------
   { name: 'length(', category: 'string', kind: 'function', syntax: 'length(string)', description: 'Returns the number of characters in a string.' },
@@ -142,6 +177,38 @@ export const COMMANDS: CommandSpec[] = [
 
 /** Words matched bare (no trailing "(") that also act as infix operators. */
 export const INFIX_WORD_OPERATORS = new Set(['and', 'or', 'xor', 'nCr', 'nPr'])
+
+/**
+ * Statistics/regression result names that behave exactly like a real
+ * variable (readable, writable, and eligible for implicit multiplication)
+ * rather than like a command — the lexer gives these the VAR token type,
+ * reusing all of the existing single-letter-variable machinery instead of
+ * introducing a parallel AST node.
+ */
+export const STAT_VAR_NAMES = new Set([
+  'n',
+  'a',
+  'b',
+  'r',
+  'MeanX',
+  'Σx',
+  'Σx²',
+  'Sx',
+  'σx',
+  'MinX',
+  'Q1',
+  'Med',
+  'Q3',
+  'MaxX',
+  'MeanY',
+  'Σy',
+  'Σy²',
+  'Σxy',
+  'Sy',
+  'σy',
+  'MinY',
+  'MaxY',
+])
 
 export function findCommand(name: string): CommandSpec | undefined {
   return COMMANDS.find((c) => c.name === name)

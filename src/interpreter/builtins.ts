@@ -13,6 +13,7 @@ import {
   str,
 } from './values'
 import * as mat from './matrix'
+import * as stats from './stats'
 
 export type AngleMode = 'degree' | 'radian'
 
@@ -112,6 +113,35 @@ export const BUILTINS: Record<string, Builtin> = {
     throw new TIError('ERR:DATA TYPE', 'dim( expects a list or matrix')
   },
   'sum(': (args) => num(requireList(args[0], 'a list').reduce((a, b) => a + b, 0)),
+  'prod(': (args) => num(requireList(args[0], 'a list').reduce((a, b) => a * b, 1)),
+  'mean(': (args) => {
+    const [xs, w] = listWithOptionalFreq(args, 'mean(')
+    return num(stats.mean(xs, w))
+  },
+  'median(': (args) => num(stats.median(requireList(args[0], 'a list'))),
+  'stdDev(': (args) => {
+    const [xs, w] = listWithOptionalFreq(args, 'stdDev(')
+    return num(stats.stdDev(xs, w))
+  },
+  'variance(': (args) => {
+    const [xs, w] = listWithOptionalFreq(args, 'variance(')
+    return num(stats.variance(xs, w))
+  },
+  'normalcdf(': (args) => {
+    const lower = requireNumber(args[0], 'a lower bound')
+    const upper = requireNumber(args[1], 'an upper bound')
+    const mu = args.length > 2 ? requireNumber(args[2], 'a mean') : 0
+    const sigma = args.length > 3 ? requireNumber(args[3], 'a standard deviation') : 1
+    if (sigma <= 0) throw new TIError('ERR:DOMAIN', 'normalcdf( requires a positive standard deviation')
+    return num(stats.normalCdf01((upper - mu) / sigma) - stats.normalCdf01((lower - mu) / sigma))
+  },
+  'invNorm(': (args) => {
+    const p = requireNumber(args[0], 'an area (0 to 1)')
+    const mu = args.length > 1 ? requireNumber(args[1], 'a mean') : 0
+    const sigma = args.length > 2 ? requireNumber(args[2], 'a standard deviation') : 1
+    if (sigma <= 0) throw new TIError('ERR:DOMAIN', 'invNorm( requires a positive standard deviation')
+    return num(mu + sigma * stats.invNormStd(p))
+  },
   'augment(': (args) => {
     const [a, b] = args
     if (a.kind === 'list' && b.kind === 'list') return list([...a.value, ...b.value])
@@ -154,6 +184,17 @@ export const BUILTINS: Record<string, Builtin> = {
     return str(s.slice(start - 1, start - 1 + length))
   },
   getKey: (_args, ctx) => num(ctx.takeLastKey()),
+}
+
+/** Reads `(list[,freqlist])` args, validating the frequency list's length if given. */
+function listWithOptionalFreq(args: Value[], fnName: string): [xs: number[], weights: number[] | undefined] {
+  const xs = requireList(args[0], 'a list')
+  if (args.length < 2) return [xs, undefined]
+  const weights = requireList(args[1], 'a frequency list')
+  if (weights.length !== xs.length) {
+    throw new TIError('ERR:DIM MISMATCH', `${fnName} frequency list must be the same length as the data list`)
+  }
+  return [xs, weights]
 }
 
 function reduceMinMax(args: Value[], fn: (...ns: number[]) => number): Value {

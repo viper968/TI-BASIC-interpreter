@@ -118,8 +118,8 @@ export default function App() {
 
       <footer className="app-footer">
         <p>
-          Scope: TI-84 Plus / TI-84 Plus Silver Edition TI-BASIC only (no complex numbers, statistics, stat plots, or graphing
-          commands yet — see the README roadmap). Angle mode defaults to Degree; switch with the Degree/Radian commands.
+          Scope: TI-84 Plus / TI-84 Plus Silver Edition TI-BASIC only (no complex numbers, stat plots, or graphing commands
+          yet — see the README roadmap). Angle mode defaults to Degree; switch with the Degree/Radian commands.
         </p>
       </footer>
     </div>

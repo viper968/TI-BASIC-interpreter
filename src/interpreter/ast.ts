@@ -81,6 +81,9 @@ export type Stmt =
   | { kind: 'SetDecimalMode'; digits: number | null } // Fix n (0-9), or Float (null)
   | { kind: 'SetNotation'; mode: 'normal' | 'sci' | 'eng' }
   | { kind: 'Fill'; value: Expr; target: { type: 'List'; name: string } | { type: 'Matrix'; name: string } }
+  | { kind: 'OneVarStats'; xList: string; freqList: string | null }
+  | { kind: 'TwoVarStats'; xList: string; yList: string; freqList: string | null }
+  | { kind: 'LinReg'; xList: string; yList: string; freqList: string | null }
 
 /** One instruction slot in the compiled, flat program. */
 export interface Instruction {

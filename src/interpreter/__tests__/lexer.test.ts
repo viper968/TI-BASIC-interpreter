@@ -141,4 +141,33 @@ describe('lexer', () => {
     // A plain multiplication still lexes as STAR.
     expect(types('2*3')).toEqual(['NUMBER', 'STAR', 'NUMBER', 'EOF'])
   })
+
+  it('tokenizes 1-Var Stats and 2-Var Stats as single keywords, not a leading number', () => {
+    const a = tokenize('1-Var Stats L1')
+    expect(a.tokens[0]).toMatchObject({ type: 'KEYWORD', text: '1-Var Stats' })
+    expect(a.tokens[1]).toMatchObject({ type: 'LIST', text: 'L1' })
+
+    const b = tokenize('2-Var Stats')
+    expect(b.tokens[0]).toMatchObject({ type: 'KEYWORD', text: '2-Var Stats' })
+
+    // A bare "1" is still just a number.
+    expect(types('1-2')).toEqual(['NUMBER', 'MINUS', 'NUMBER', 'EOF'])
+  })
+
+  it('tokenizes reserved stat/regression names as VAR tokens, distinct from real vars', () => {
+    expect(types('n')).toEqual(['VAR', 'EOF'])
+    expect(tokenize('n').tokens[0].text).toBe('n')
+    expect(types('MeanX')).toEqual(['VAR', 'EOF'])
+    expect(types('Σx')).toEqual(['VAR', 'EOF'])
+    expect(types('Σx²')).toEqual(['VAR', 'EOF'])
+    expect(types('σx')).toEqual(['VAR', 'EOF'])
+    // "a" and "abs(" don't collide: greedy longest-match picks the right one.
+    expect(tokenize('abs(').tokens[0]).toMatchObject({ type: 'KEYWORD', text: 'abs(' })
+    expect(tokenize('a+1').tokens[0]).toMatchObject({ type: 'VAR', text: 'a' })
+  })
+
+  it('accepts ASCII aliases for the Σ/σ stat names', () => {
+    expect(tokenize('Sumx').tokens[0]).toMatchObject({ type: 'VAR', text: 'Σx' })
+    expect(tokenize('sigmax').tokens[0]).toMatchObject({ type: 'VAR', text: 'σx' })
+  })
 })

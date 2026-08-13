@@ -16,7 +16,17 @@ const COMPARE_OPS: Partial<Record<TokenType, BinaryOp>> = {
 }
 
 /** Function-style keywords that are statement-only and illegal inside an expression. */
-const STATEMENT_ONLY_KEYWORDS = new Set(['For(', 'Output(', 'Menu(', 'IS>(', 'DS<(', 'Fill('])
+const STATEMENT_ONLY_KEYWORDS = new Set([
+  'For(',
+  'Output(',
+  'Menu(',
+  'IS>(',
+  'DS<(',
+  'Fill(',
+  '1-Var Stats',
+  '2-Var Stats',
+  'LinReg(ax+b)',
+])
 
 /** Tokens that legitimately end a statement. */
 function isStmtEnd(tok: Token): boolean {
@@ -169,6 +179,12 @@ class Parser {
           return this.parseFix()
         case 'Fill(':
           return this.parseFill()
+        case '1-Var Stats':
+          return this.parseOneVarStats()
+        case '2-Var Stats':
+          return this.parseTwoVarStats()
+        case 'LinReg(ax+b)':
+          return this.parseLinReg()
         default:
           break
       }
@@ -327,6 +343,46 @@ class Parser {
     const target = this.parseListOrMatrixName()
     this.expect('RPAREN', '")"')
     return { kind: 'Fill', value, target }
+  }
+
+  private parseOneVarStats(): Stmt {
+    this.advance() // 1-Var Stats
+    if (isStmtEnd(this.current())) return { kind: 'OneVarStats', xList: 'L1', freqList: null }
+    const xList = this.expect('LIST', 'a list (L1-L6)').text
+    let freqList: string | null = null
+    if (this.current().type === 'COMMA') {
+      this.advance()
+      freqList = this.expect('LIST', 'a list (L1-L6)').text
+    }
+    return { kind: 'OneVarStats', xList, freqList }
+  }
+
+  private parseTwoVarStats(): Stmt {
+    this.advance() // 2-Var Stats
+    if (isStmtEnd(this.current())) return { kind: 'TwoVarStats', xList: 'L1', yList: 'L2', freqList: null }
+    const xList = this.expect('LIST', 'a list (L1-L6)').text
+    this.expect('COMMA', '","')
+    const yList = this.expect('LIST', 'a list (L1-L6)').text
+    let freqList: string | null = null
+    if (this.current().type === 'COMMA') {
+      this.advance()
+      freqList = this.expect('LIST', 'a list (L1-L6)').text
+    }
+    return { kind: 'TwoVarStats', xList, yList, freqList }
+  }
+
+  private parseLinReg(): Stmt {
+    this.advance() // LinReg(ax+b)
+    if (isStmtEnd(this.current())) return { kind: 'LinReg', xList: 'L1', yList: 'L2', freqList: null }
+    const xList = this.expect('LIST', 'a list (L1-L6)').text
+    this.expect('COMMA', '","')
+    const yList = this.expect('LIST', 'a list (L1-L6)').text
+    let freqList: string | null = null
+    if (this.current().type === 'COMMA') {
+      this.advance()
+      freqList = this.expect('LIST', 'a list (L1-L6)').text
+    }
+    return { kind: 'LinReg', xList, yList, freqList }
   }
 
   private parseInput(): Stmt {

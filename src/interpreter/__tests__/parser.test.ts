@@ -308,4 +308,49 @@ describe('parser: statements', () => {
     const last = program.instructions[program.instructions.length - 1].stmt
     expect(last).toMatchObject({ kind: 'Disp' })
   })
+
+  it('parses 1-Var Stats with defaults and with explicit lists', () => {
+    const bare = parse('1-Var Stats')
+    expect(bare.diagnostics).toHaveLength(0)
+    expect(bare.program.instructions[0].stmt).toEqual({ kind: 'OneVarStats', xList: 'L1', freqList: null })
+
+    const explicit = parse('1-Var Stats L2,L3')
+    expect(explicit.diagnostics).toHaveLength(0)
+    expect(explicit.program.instructions[0].stmt).toEqual({ kind: 'OneVarStats', xList: 'L2', freqList: 'L3' })
+  })
+
+  it('parses 2-Var Stats with defaults and with explicit lists', () => {
+    const bare = parse('2-Var Stats')
+    expect(bare.diagnostics).toHaveLength(0)
+    expect(bare.program.instructions[0].stmt).toEqual({
+      kind: 'TwoVarStats',
+      xList: 'L1',
+      yList: 'L2',
+      freqList: null,
+    })
+
+    const explicit = parse('2-Var Stats L1,L2,L3')
+    expect(explicit.diagnostics).toHaveLength(0)
+    expect(explicit.program.instructions[0].stmt).toEqual({
+      kind: 'TwoVarStats',
+      xList: 'L1',
+      yList: 'L2',
+      freqList: 'L3',
+    })
+  })
+
+  it('parses LinReg(ax+b) with defaults and with explicit lists', () => {
+    const bare = parse('LinReg(ax+b)')
+    expect(bare.diagnostics).toHaveLength(0)
+    expect(bare.program.instructions[0].stmt).toEqual({ kind: 'LinReg', xList: 'L1', yList: 'L2', freqList: null })
+
+    const explicit = parse('LinReg(ax+b) L3,L4')
+    expect(explicit.diagnostics).toHaveLength(0)
+    expect(explicit.program.instructions[0].stmt).toEqual({ kind: 'LinReg', xList: 'L3', yList: 'L4', freqList: null })
+  })
+
+  it('rejects 1-Var Stats used inside an expression', () => {
+    const { diagnostics } = parse('Disp 1-Var Stats')
+    expect(diagnostics.length).toBeGreaterThan(0)
+  })
 })
