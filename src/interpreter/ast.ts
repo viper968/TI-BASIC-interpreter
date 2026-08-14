@@ -96,6 +96,9 @@ export type Stmt =
   | { kind: 'SetComplexMode'; mode: 'real' | 'rect' | 'polar' } // Real / a+bi / re^θi
   | { kind: 'SortList'; mode: 'asc' | 'desc'; lists: string[] } // SortA(/SortD(
   | { kind: 'ClrList'; lists: string[] }
+  | { kind: 'ClrAllLists' }
+  | { kind: 'ListToMatr'; lists: string[]; matrix: string } // List►matr(
+  | { kind: 'MatrToList'; matrix: string; lists: string[] } // Matr►list(
   /** QuadReg/CubicReg/QuartReg: y = a + bx + cx² [+ dx³ [+ ex⁴]]. */
   | { kind: 'PolyReg'; degree: 2 | 3 | 4; xList: string; yList: string; freqList: string | null }
   | { kind: 'LnReg'; xList: string; yList: string; freqList: string | null } // y = a + b*ln(x)

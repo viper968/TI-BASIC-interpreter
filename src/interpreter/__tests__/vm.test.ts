@@ -1136,3 +1136,76 @@ describe('vm: Shade( and graph screen extras', () => {
     expect(anyShaded).toBe(true)
   })
 })
+
+describe('vm: rand, Σ(, ClrAllLists, List►matr(/Matr►list(', () => {
+  it('rand returns a number in [0,1)', () => {
+    const r = run('Disp rand')
+    expect(r.error).toBeNull()
+    const v = Number(r.screenText.split('\n')[0])
+    expect(v).toBeGreaterThanOrEqual(0)
+    expect(v).toBeLessThan(1)
+  })
+
+  it('rand is usable in arithmetic, e.g. scaled to an integer range', () => {
+    const r = run('int(10rand)->A\nDisp A>=0 and A<10')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('1')
+  })
+
+  it('Σ( sums a formula over a variable range (default step 1)', () => {
+    // Σ(X,X,1,5) = 1+2+3+4+5 = 15
+    const r = run('Disp Σ(X,X,1,5)')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('15')
+  })
+
+  it('Σ( honors an explicit step', () => {
+    // Σ(X²,X,0,10,2) = 0+4+16+36+64+100 = 220
+    const r = run('Disp Σ(X²,X,0,10,2)')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('220')
+  })
+
+  it('Σ( is distinct from sum( — sum( still totals an existing list', () => {
+    const r = run('Disp sum({1,2,3})')
+    expect(r.error).toBeNull()
+    expect(r.screenText.split('\n')[0]).toBe('6')
+  })
+
+  it('ClrAllLists empties L1-L6 and drops custom-named lists', () => {
+    const r = run('{1,2,3}->L1\n{4,5}->L2\n{9,9}->∟DATA\nClrAllLists\nDisp dim(L1)')
+    expect(r.error).toBeNull()
+    expect(r.state.lists.L1).toEqual([])
+    expect(r.state.lists.L2).toEqual([])
+    expect(r.state.lists.DATA).toBeUndefined()
+    expect(r.screenText.split('\n')[0]).toBe('0')
+  })
+
+  it('List►matr( stores lists as matrix columns', () => {
+    const r = run('{1,2,3}->L1\n{4,5,6}->L2\nList►matr(L1,L2,[A])')
+    expect(r.error).toBeNull()
+    expect(r.state.matrices.A).toEqual([
+      [1, 4],
+      [2, 5],
+      [3, 6],
+    ])
+  })
+
+  it('List►matr( requires equal-length lists', () => {
+    const r = run('{1,2,3}->L1\n{4,5}->L2\nList►matr(L1,L2,[A])')
+    expect(r.error?.code).toBe('ERR:DIM MISMATCH')
+  })
+
+  it('Matr►list( stores matrix columns into lists', () => {
+    const r = run('[[1,4][2,5][3,6]]->[A]\nMatr►list([A],L1,L2)')
+    expect(r.error).toBeNull()
+    expect(r.state.lists.L1).toEqual([1, 2, 3])
+    expect(r.state.lists.L2).toEqual([4, 5, 6])
+  })
+
+  it('List►matr( and Matr►list( round-trip', () => {
+    const r = run('{7,8,9}->L1\nList►matr(L1,[A])\nMatr►list([A],L2)\nDisp L2')
+    expect(r.error).toBeNull()
+    expect(r.state.lists.L2).toEqual([7, 8, 9])
+  })
+})

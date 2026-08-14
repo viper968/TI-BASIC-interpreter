@@ -12,6 +12,29 @@ interface Props {
   onGotoErrorLine?: (line: number) => void
 }
 
+/**
+ * One row of the LCD, rendered as SCREEN_COLS fixed-width cells (a CSS grid
+ * of equal-fraction columns) instead of one plain text node. A handful of
+ * glyphs this interpreter displays (θ, →, √, ², ⁻¹, Σ, …) aren't reliably
+ * present in every platform's monospace font, so the browser silently
+ * substitutes a fallback font *for just that character* — which is rarely
+ * the same width as the rest of the row, breaking the calculator's fixed
+ * 16-column grid. Giving every character its own equal-width cell keeps the
+ * grid exact regardless of which font actually rendered any given glyph.
+ */
+function ScreenRow({ text }: { text: string }) {
+  const chars = text.padEnd(SCREEN_COLS, ' ').slice(0, SCREEN_COLS).split('')
+  return (
+    <div className="calc-lcd-row">
+      {chars.map((ch, i) => (
+        <span className="calc-lcd-char" key={i}>
+          {ch}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 export function CalculatorScreen({ screenRows, status, pending, error, onResume, onGotoErrorLine }: Props) {
   const [inputText, setInputText] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -33,9 +56,7 @@ export function CalculatorScreen({ screenRows, status, pending, error, onResume,
       </div>
       <div className="calc-lcd" role="status" aria-live="polite">
         {rows.map((row, i) => (
-          <div className="calc-lcd-row" key={i}>
-            {row.padEnd(SCREEN_COLS, ' ')}
-          </div>
+          <ScreenRow key={i} text={row} />
         ))}
 
         {status === 'menu' && pending?.type === 'menu' && (

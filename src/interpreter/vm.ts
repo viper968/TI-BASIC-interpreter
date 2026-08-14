@@ -622,6 +622,7 @@ class Runner {
 
   private evalCall(name: string, argExprs: Expr[]): Value {
     if (name === 'seq(') return this.evalSeq(argExprs)
+    if (name === 'Σ(') return this.evalSummation(argExprs)
     if (name === 'pxl-Test(') return this.evalPxlTest(argExprs)
     if (name === 'nDeriv(') return this.evalNDeriv(argExprs)
     if (name === 'fnInt(') return this.evalFnInt(argExprs)
@@ -779,6 +780,23 @@ class Runner {
       results.push(requireNumber(this.evalExpr(exprArg), 'a numeric sequence value'))
     }
     return list(results)
+  }
+
+  /** Σ(expr,var,start,end[,step]): sums expr for var stepping from start to end (default step 1). */
+  private evalSummation(argExprs: Expr[]): Value {
+    if (argExprs.length < 4) throw new TIError('ERR:ARGUMENT', 'Σ( requires expr,var,start,end[,step]')
+    const [exprArg, varArg, startArg, endArg, stepArg] = argExprs
+    if (varArg.type !== 'Var') throw new TIError('ERR:DATA TYPE', 'Σ( second argument must be a variable')
+    const start = Math.round(requireNumber(this.evalExpr(startArg), 'a start value'))
+    const end = Math.round(requireNumber(this.evalExpr(endArg), 'an end value'))
+    const step = stepArg ? Math.round(requireNumber(this.evalExpr(stepArg), 'a step value')) : 1
+    if (step === 0) throw new TIError('ERR:DOMAIN', 'Σ( step cannot be 0')
+    let total = 0
+    for (let i = start; step > 0 ? i <= end : i >= end; i += step) {
+      this.setRealVar(varArg.name, i)
+      total += requireNumber(this.evalExpr(exprArg), 'a numeric term')
+    }
+    return num(checkFinite(total))
   }
 
   private assignTo(target: StoreTarget, value: Value): void {
@@ -1321,6 +1339,32 @@ class Runner {
       }
       case 'ClrList': {
         for (const name of stmt.lists) this.state.lists[name] = []
+        return { kind: 'next' }
+      }
+      case 'ClrAllLists': {
+        // Clears L1-L6 to empty and drops every custom-named (∟NAME) list entirely.
+        this.state.lists = { L1: [], L2: [], L3: [], L4: [], L5: [], L6: [] }
+        return { kind: 'next' }
+      }
+      case 'ListToMatr': {
+        const cols = stmt.lists.map((name) => this.state.lists[name] ?? [])
+        const rows = cols[0].length
+        if (cols.some((c) => c.length !== rows)) {
+          throw new TIError('ERR:DIM MISMATCH', 'List►matr( requires every list to be the same length')
+        }
+        const out: number[][] = Array.from({ length: rows }, (_, r) => cols.map((c) => c[r]))
+        this.state.matrices[stmt.matrix] = out
+        return { kind: 'next' }
+      }
+      case 'MatrToList': {
+        const m = this.state.matrices[stmt.matrix] ?? []
+        const [, colCount] = mat.dims(m)
+        if (stmt.lists.length > colCount) {
+          throw new TIError('ERR:DIM MISMATCH', 'Matr►list( requires at least as many matrix columns as lists given')
+        }
+        stmt.lists.forEach((name, c) => {
+          this.state.lists[name] = m.map((row) => row[c])
+        })
         return { kind: 'next' }
       }
       case 'DefinePlot': {

@@ -52,6 +52,8 @@ const STATEMENT_ONLY_KEYWORDS = new Set([
   'Pt-Change(',
   'Horizontal',
   'Vertical',
+  'List►matr(',
+  'Matr►list(',
 ])
 
 /** Plot1(/Plot2(/Plot3( type keywords, mapped to the internal plot-type tag. */
@@ -251,6 +253,13 @@ class Parser {
         case 'ClrList':
           this.advance()
           return { kind: 'ClrList', lists: this.parseListNameSeries() }
+        case 'ClrAllLists':
+          this.advance()
+          return { kind: 'ClrAllLists' }
+        case 'List►matr(':
+          return this.parseListToMatr()
+        case 'Matr►list(':
+          return this.parseMatrToList()
         case 'QuadReg':
           this.advance()
           return { kind: 'PolyReg', degree: 2, ...this.parseXYFreqTail() }
@@ -518,6 +527,31 @@ class Parser {
     return names
   }
 
+  private parseListToMatr(): Stmt {
+    this.advance() // List►matr(
+    // Unlike parseListNameSeries's series, this one is followed by a trailing
+    // matrix argument — so only consume a comma here while it's still
+    // introducing another list, leaving the last comma for the matrix.
+    const lists = [this.expect('LIST', 'a list (L1-L6 or ∟NAME)').text]
+    while (this.current().type === 'COMMA' && this.tokens[this.pos + 1]?.type === 'LIST') {
+      this.advance() // comma
+      lists.push(this.expect('LIST', 'a list (L1-L6 or ∟NAME)').text)
+    }
+    this.expect('COMMA', '","')
+    const matrix = this.expect('MATRIX', 'a matrix ([A]-[J])').text.slice(1, -1)
+    this.expect('RPAREN', '")"')
+    return { kind: 'ListToMatr', lists, matrix }
+  }
+
+  private parseMatrToList(): Stmt {
+    this.advance() // Matr►list(
+    const matrix = this.expect('MATRIX', 'a matrix ([A]-[J])').text.slice(1, -1)
+    this.expect('COMMA', '","')
+    const lists = this.parseListNameSeries()
+    this.expect('RPAREN', '")"')
+    return { kind: 'MatrToList', matrix, lists }
+  }
+
   private parsePlotDef(plot: 1 | 2 | 3): Stmt {
     this.advance() // Plot1(/Plot2(/Plot3(
     const typeTok = this.current()
@@ -781,6 +815,9 @@ class Parser {
     if (tok.type === 'ANS' || tok.type === 'PI' || tok.type === 'LPAREN') return true
     if (tok.type === 'MATRIX' || tok.type === 'YVAR' || tok.type === 'IMAG') return true
     if (tok.type === 'KEYWORD' && tok.text.endsWith('(') && !STATEMENT_ONLY_KEYWORDS.has(tok.text)) return true
+    // rand takes no parentheses, but real hardware still allows e.g. 10rand
+    // (a common idiom for scaling the 0-1 result) via implicit multiplication.
+    if (tok.type === 'KEYWORD' && tok.text === 'rand') return true
     return false
   }
 
@@ -963,9 +1000,9 @@ class Parser {
           this.expect('RPAREN', '")"')
           return { type: 'Call', name: tok.text, args }
         }
-        if (tok.text === 'getKey') {
+        if (tok.text === 'getKey' || tok.text === 'rand') {
           this.advance()
-          return { type: 'Call', name: 'getKey', args: [] }
+          return { type: 'Call', name: tok.text, args: [] }
         }
         this.error(`Unexpected "${tok.text}" in expression`)
         break

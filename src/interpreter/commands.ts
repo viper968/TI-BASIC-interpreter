@@ -78,6 +78,7 @@ export const COMMANDS: CommandSpec[] = [
   // ---- Lists ---------------------------------------------------------------
   { name: 'dim(', category: 'list', kind: 'function', syntax: 'dim(list) or dim(matrix)', description: 'Returns the number of elements in a list, or {rows,cols} for a matrix. Also usable as a store target — {n}->dim(L1) resizes L1, and {r,c}->dim([A]) resizes [A] (zero-filling new slots).' },
   { name: 'seq(', category: 'list', kind: 'function', syntax: 'seq(expr,var,start,end[,step])', description: 'Builds a list by evaluating expr for var stepping from start to end.' },
+  { name: 'Σ(', category: 'list', kind: 'function', syntax: 'Σ(expr,var,start,end[,step])', description: 'Summation: adds up expr for var stepping from start to end (default step 1). Distinct from sum(list), which totals an existing list.' },
   { name: 'sum(', category: 'list', kind: 'function', syntax: 'sum(list)', description: 'Returns the sum of all elements in a list.' },
   { name: 'prod(', category: 'list', kind: 'function', syntax: 'prod(list)', description: 'Returns the product of all elements in a list.' },
   { name: 'augment(', category: 'list', kind: 'function', syntax: 'augment(list1,list2) or augment(matrixA,matrixB)', description: 'Concatenates two lists, or two matrices with the same row count (side by side).' },
@@ -85,6 +86,7 @@ export const COMMANDS: CommandSpec[] = [
   { name: 'SortA(', category: 'list', kind: 'statement', syntax: 'SortA(list1[,list2,…])', description: 'Sorts list1 ascending in place; any additional lists are reordered the same way, keeping paired data aligned.' },
   { name: 'SortD(', category: 'list', kind: 'statement', syntax: 'SortD(list1[,list2,…])', description: 'Sorts list1 descending in place; any additional lists are reordered the same way, keeping paired data aligned.' },
   { name: 'ClrList', category: 'list', kind: 'statement', syntax: 'ClrList list1[,list2,…]', description: 'Clears one or more lists to empty.' },
+  { name: 'ClrAllLists', category: 'list', kind: 'statement', syntax: 'ClrAllLists', description: 'Clears L1-L6 to empty and deletes every custom-named (∟NAME) list.' },
   { name: 'cumSum(', category: 'list', kind: 'function', syntax: 'cumSum(list)', description: 'Returns a list of running (cumulative) sums.' },
   { name: 'ΔList(', category: 'list', kind: 'function', syntax: 'ΔList(list)', description: 'Returns a list, one shorter, of the differences between consecutive elements.' },
   { name: '∟', category: 'list', kind: 'constant', syntax: '∟NAME', description: 'Prefixes a custom list name (a letter, then up to 4 more letters/digits) so it can be stored and read just like L1-L6, e.g. {1,2,3}->∟DATA. Not needed for L1-L6 themselves.' },
@@ -101,6 +103,8 @@ export const COMMANDS: CommandSpec[] = [
   { name: 'row+(', category: 'matrix', kind: 'function', syntax: 'row+(matrix,rowA,rowB)', description: 'Returns a copy of matrix with rowA added into rowB.' },
   { name: '*row(', category: 'matrix', kind: 'function', syntax: '*row(value,matrix,row)', description: 'Returns a copy of matrix with row scaled by value.' },
   { name: '*row+(', category: 'matrix', kind: 'function', syntax: '*row+(value,matrix,rowA,rowB)', description: 'Returns a copy of matrix with value*rowA added into rowB.' },
+  { name: 'List►matr(', category: 'matrix', kind: 'statement', syntax: 'List►matr(list1[,list2,…],matrix)', description: 'Stores up to 10 equal-length lists as consecutive columns of matrix, resizing it as needed.' },
+  { name: 'Matr►list(', category: 'matrix', kind: 'statement', syntax: 'Matr►list(matrix,list1[,list2,…])', description: 'Stores matrix\'s columns 1,2,… into list1, list2, … (one list per column, left to right).' },
 
   // ---- Statistics ---------------------------------------------------------------
   { name: 'mean(', category: 'stats', kind: 'function', syntax: 'mean(list[,freqlist])', description: 'Arithmetic mean of a list, optionally weighted by a frequency list.' },
@@ -210,6 +214,7 @@ export const COMMANDS: CommandSpec[] = [
   { name: 'int(', category: 'math', kind: 'function', syntax: 'int(value)', description: 'Greatest integer ≤ value (floor).' },
   { name: 'iPart(', category: 'math', kind: 'function', syntax: 'iPart(value)', description: 'Integer part of value (truncates toward 0).' },
   { name: 'fPart(', category: 'math', kind: 'function', syntax: 'fPart(value)', description: 'Fractional part of value.' },
+  { name: 'rand', category: 'math', kind: 'function', syntax: 'rand', description: 'A random real number between 0 (inclusive) and 1 (exclusive). Takes no arguments and no parentheses.' },
   { name: 'randInt(', category: 'math', kind: 'function', syntax: 'randInt(low,high[,n])', description: 'Random integer(s) between low and high, inclusive.' },
   { name: 'min(', category: 'math', kind: 'function', syntax: 'min(a,b) or min(list)', description: 'Smaller of two values, or the minimum of a list.' },
   { name: 'max(', category: 'math', kind: 'function', syntax: 'max(a,b) or max(list)', description: 'Larger of two values, or the maximum of a list.' },

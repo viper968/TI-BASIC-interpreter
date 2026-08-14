@@ -105,10 +105,14 @@ implicit multiplication (`2X`, `2(3+4)`, `AB`), correct TI operator
 precedence (e.g. `-2^2` is `-4`, `^` is right-associative), `π`, `e`,
 `nCr`/`nPr`, and the common math functions (`sin(`, `cos(`, `tan(` and
 their inverses, `ln(`, `log(`, `√(`, `abs(`, `round(`, `int(`, `iPart(`,
-`fPart(`, `randInt(`, `min(`, `max(`, `gcd(`, `lcm(`, `not(`), list
-functions (`dim(`, `seq(`, `sum(`, `augment(`), calculus tools (`nDeriv(`,
+`fPart(`, `randInt(`, `rand`, `min(`, `max(`, `gcd(`, `lcm(`, `not(`), list
+functions (`dim(`, `seq(`, `sum(`, `Σ(`, `augment(`), calculus tools (`nDeriv(`,
 `fnInt(`, `fMin(`, `fMax(`, `solve(` — see "Calculus" below), and string
-functions (`length(`, `sub(`, `inString(`, plus `+` for concatenation).
+functions (`length(`, `sub(`, `inString(`, plus `+` for concatenation). `rand`
+is a random real in [0,1) — no parentheses, but usable in arithmetic like any
+other value (`int(10rand)` for a random digit); `Σ(expr,var,start,end[,step])`
+sums expr for var stepping across a range, distinct from `sum(list)`, which
+totals an existing list.
 `Degree`/`Radian` switch the angle mode (default: Degree). Unlike `π`, `e`
 is genuinely just an ordinary variable that defaults to 2.718281828459 —
 it can be overwritten (e.g. `QuartReg`'s 5th coefficient really does this),
@@ -136,7 +140,8 @@ access, ...) accepts a `∟`-list too, since it's the exact same underlying
 mechanism. `SortA(`/`SortD(` sort a list ascending/descending in place,
 reordering any additional lists you pass along with it so paired data
 (e.g. names alongside scores) stays aligned; `ClrList` empties one or more
-lists; `cumSum(` returns running totals; `ΔList(` returns the differences
+lists (`ClrAllLists` empties L1-L6 and deletes every `∟`-named list at
+once); `cumSum(` returns running totals; `ΔList(` returns the differences
 between consecutive elements.
 
 **Matrices:** the 10 matrix variables `[A]`-`[J]`, `[[1,2][3,4]]` literal
@@ -146,8 +151,11 @@ syntax (rows adjacent, no commas between them), element access
 power), `det(`, `Transpose(`, `identity(`, `randM(`, `augment(`, `ref(`
 and `rref(` (the usual way to solve a system of equations — see the
 `MATRIX` sample program), the row operations `rowSwap(`/`row+(`/`*row(`/
-`*row+(`, and resizing either a list or a matrix by storing dimensions
-into `dim(` (`{5}->dim(L1)`, `{2,3}->dim([A])`) followed by `Fill(`.
+`*row+(`, resizing either a list or a matrix by storing dimensions
+into `dim(` (`{5}->dim(L1)`, `{2,3}->dim([A])`) followed by `Fill(`, and
+converting between the two with `List►matr(list1[,list2,…],matrix)` (each
+list becomes a column) and `Matr►list(matrix,list1[,list2,…])` (each column
+becomes a list, left to right).
 
 **Statistics:** the list functions `mean(`, `median(`, `stdDev(` (sample),
 `variance(` (sample), and `prod(`, each optionally weighted by a second
