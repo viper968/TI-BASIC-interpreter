@@ -496,8 +496,21 @@
   min-height: 200px;
 }
 .calc-lcd-row {
-  white-space: pre;
+  display: grid;
+  /* 1ch is the width of "0" in the row's own font, so this is a compact,
+     authentic terminal-style grid rather than stretching to fill the LCD's
+     full width (which is what repeat(16, 1fr) would do). */
+  grid-template-columns: repeat(16, 1ch);
   min-height: 1.55em;
+}
+/* Every character gets an equal-width cell (see ScreenRow's comment in
+   CalculatorScreen.tsx) so the 16-column grid stays exact even when a
+   glyph like θ/→/√/Σ renders from a fallback font with different metrics
+   than the rest of the row. */
+.calc-lcd-char {
+  overflow: hidden;
+  white-space: pre;
+  text-align: center;
 }
 
 .calc-overlay {

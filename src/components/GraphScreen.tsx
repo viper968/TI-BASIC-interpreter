@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { GRAPH_COLS, GRAPH_ROWS, colToX, type GraphScreen as GraphScreenData, yToRow } from '../interpreter'
+import {
+  GRAPH_COLS,
+  GRAPH_ROWS,
+  colToX,
+  createGraphScreen,
+  drawLine,
+  type GraphScreen as GraphScreenData,
+  setPixel,
+  yToRow,
+} from '../interpreter'
 
 interface Props {
   graphScreen: GraphScreenData | null
@@ -69,16 +78,51 @@ export function GraphScreen({ graphScreen, vars, yVars, evalYVarAt }: Props) {
         }
       }
     }
-    if (traceOn && traceName && traceY !== null) {
-      const row = yToRow(traceY, win)
-      if (row >= 0 && row < GRAPH_ROWS) {
-        ctx.fillStyle = accent
-        ctx.beginPath()
-        ctx.arc(traceCol * PIXEL_SIZE + PIXEL_SIZE / 2, row * PIXEL_SIZE + PIXEL_SIZE / 2, PIXEL_SIZE * 1.4, 0, Math.PI * 2)
-        ctx.fill()
+    if (traceOn && traceName) {
+      // Re-plot the traced Y-variable's curve fresh, from its live definition
+      // — rather than trusting graphScreen's pixel buffer, which only holds
+      // whatever DispGraph/ClrDraw/Line(/Circle( last happened to draw and
+      // can easily be stale (or entirely unrelated) by the time Trace is
+      // turned on. This guarantees the cursor always sits on a curve that's
+      // actually visible, exactly like real hardware's TRACE.
+      const overlay = createGraphScreen()
+      let prevRow: number | null = null
+      let prevCol: number | null = null
+      for (let col = 0; col < GRAPH_COLS; col++) {
+        const x = colToX(col, win)
+        const y = evalYVarAt(traceName, x)
+        if (y === null || !Number.isFinite(y)) {
+          prevRow = null
+          prevCol = null
+          continue
+        }
+        const row = yToRow(y, win)
+        if (row < 0 || row >= GRAPH_ROWS) {
+          prevRow = null
+          prevCol = null
+          continue
+        }
+        if (prevRow !== null && prevCol !== null) drawLine(overlay, prevRow, prevCol, row, col)
+        else setPixel(overlay, row, col, true)
+        prevRow = row
+        prevCol = col
+      }
+      ctx.fillStyle = accent
+      for (let r = 0; r < GRAPH_ROWS; r++) {
+        for (let c = 0; c < GRAPH_COLS; c++) {
+          if (overlay.pixels[r][c]) ctx.fillRect(c * PIXEL_SIZE, r * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE)
+        }
+      }
+      if (traceY !== null) {
+        const row = yToRow(traceY, win)
+        if (row >= 0 && row < GRAPH_ROWS) {
+          ctx.beginPath()
+          ctx.arc(traceCol * PIXEL_SIZE + PIXEL_SIZE / 2, row * PIXEL_SIZE + PIXEL_SIZE / 2, PIXEL_SIZE * 1.4, 0, Math.PI * 2)
+          ctx.fill()
+        }
       }
     }
-  }, [graphScreen, traceOn, traceName, traceY, traceCol, win])
+  }, [graphScreen, traceOn, traceName, traceY, traceCol, win, evalYVarAt])
 
   return (
     <div className="graph-panel">

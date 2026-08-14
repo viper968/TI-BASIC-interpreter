@@ -257,6 +257,7 @@ export const BUILTINS: Record<string, Builtin> = {
     return list(out)
   },
   getKey: (_args, ctx) => num(ctx.takeLastKey()),
+  rand: () => num(Math.random()),
 }
 
 /** Reads `(list[,freqlist])` args, validating the frequency list's length if given. */
